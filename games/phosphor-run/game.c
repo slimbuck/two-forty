@@ -478,6 +478,15 @@ static void text(int x, int y, const char *value, int scale, struct colour colou
     host->draw_text(host->context,x,y,value,scale,colour.r,colour.g,colour.b);
 }
 
+static void controller_label(enum two_forty_action action, const char *fallback,
+                             char *label, size_t capacity)
+{
+    if (host->action_label != NULL)
+        host->action_label(host->context, action, label, capacity);
+    else
+        copy_text(label, capacity, fallback);
+}
+
 static void render_background(void)
 {
     rectangle(0,0,host->screen_width,host->screen_height,settings.background);
@@ -587,16 +596,25 @@ static void render_hud(void)
 
 static void render_title(void)
 {
+    char jump[32], dash[32], confirm[32], menu[32], line[96];
+    controller_label(TWO_FORTY_ACTION_JUMP, "B", jump, sizeof(jump));
+    controller_label(TWO_FORTY_ACTION_DASH, "Y", dash, sizeof(dash));
+    controller_label(TWO_FORTY_ACTION_CONFIRM, "START", confirm, sizeof(confirm));
+    controller_label(TWO_FORTY_ACTION_MENU, "SELECT", menu, sizeof(menu));
     render_background();
     int blink=(title_timer/28)&1;
     text(27,184,"PHOSPHOR",4,settings.phosphor);
     text(86,145,"RUN",5,settings.amber);
     rectangle(48,118,224,2,settings.edge);
     text(56,93,"RESTORE THE LAST SIGNAL",1,settings.paper);
-    text(56,73,"MOVE  ARROWS OR A D",1,settings.edge);
-    text(56,58,"JUMP  Z OR SPACE",1,settings.edge);
-    text(56,43,"DASH  X OR SHIFT",1,settings.edge);
-    if (blink) text(92,18,"PRESS ENTER",2,settings.paper);
+    text(56,73,"MOVE  DPAD",1,settings.edge);
+    snprintf(line,sizeof(line),"JUMP  %s",jump); text(56,58,line,1,settings.edge);
+    snprintf(line,sizeof(line),"DASH  %s",dash); text(56,43,line,1,settings.edge);
+    snprintf(line,sizeof(line),"%s  MENU",menu); text(56,28,line,1,settings.edge);
+    if (blink) {
+        snprintf(line,sizeof(line),"%s  BEGIN",confirm);
+        text(92,14,line,2,settings.paper);
+    }
 }
 
 static void render_game(void)
@@ -608,10 +626,14 @@ static void render_game(void)
         rectangle(75,102,170,32,settings.background);
         text(94,123,"SIGNAL LOST",2,settings.hazard);
     } else if (phase==PHASE_WIN) {
+        char confirm[32], line[96];
+        controller_label(TWO_FORTY_ACTION_CONFIRM, "START", confirm,
+                         sizeof(confirm));
         rectangle(25,65,270,102,settings.background);
         text(45,145,"TRANSMISSION",3,settings.phosphor);
         text(105,114,"RESTORED",2,settings.paper);
-        text(74,87,"ENTER  RUN AGAIN",1,settings.amber);
+        snprintf(line,sizeof(line),"%s  RUN AGAIN",confirm);
+        text(74,87,line,1,settings.amber);
     }
 }
 

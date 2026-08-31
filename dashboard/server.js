@@ -123,9 +123,10 @@ function readBootGame() {
   return parseConfig(fs.readFileSync(HOST_CONFIG, "utf8")).boot_game || "launcher";
 }
 
-function writeBootGame(game) {
+function writeBootGame(game, sourceText) {
   fs.mkdirSync(path.dirname(HOST_CONFIG), { recursive: true });
-  let text = fs.existsSync(HOST_CONFIG) ? fs.readFileSync(HOST_CONFIG, "utf8") : "";
+  let text = sourceText !== undefined ? sourceText
+    : (fs.existsSync(HOST_CONFIG) ? fs.readFileSync(HOST_CONFIG, "utf8") : "");
   if (/^boot_game=.*$/m.test(text)) text = text.replace(/^boot_game=.*$/m, `boot_game=${game}`);
   else text = `${text.trimEnd()}\nboot_game=${game}\n`;
   fs.writeFileSync(HOST_CONFIG, text.endsWith("\n") ? text : `${text}\n`, "utf8");
@@ -188,7 +189,13 @@ const routes = {
     const body = await requestBody(request);
     const available = new Set(["launcher", ...listGames().map((game) => game.id)]);
     if (!available.has(body.game)) return json(response, 400, { error: "unknown boot target" });
-    writeBootGame(body.game);
+    let remoteConfig;
+    try {
+      remoteConfig = (await ssh(`cat ${config.remoteRoot}/config/host.conf`)).stdout;
+    } catch {
+      remoteConfig = undefined;
+    }
+    writeBootGame(body.game, remoteConfig);
     await command("scp", [...scpArgs(), HOST_CONFIG,
       `${config.user}@${config.host}:${config.remoteRoot}/config/host.conf`]);
     json(response, 200, { ok: true, bootGame: body.game });
@@ -204,10 +211,17 @@ const routes = {
 
   async deploy(_request, response) {
     await ssh(`mkdir -p ${config.remoteRoot}`);
-    const sources = ["Makefile", "README.md", "include", "src", "games", "tools", "deploy", "provision", "config"]
+    const hasHostConfig = (await ssh(
+      `test -f ${config.remoteRoot}/config/host.conf && printf yes || true`)).stdout === "yes";
+    const sources = ["Makefile", "README.md", "include", "src", "games", "tools", "deploy", "provision"]
       .map((item) => path.join(ROOT, item));
     await command("scp", [...scpArgs(), "-r", ...sources,
       `${config.user}@${config.host}:${config.remoteRoot}/`], 60_000);
+    if (!hasHostConfig) {
+      await ssh(`mkdir -p ${config.remoteRoot}/config`);
+      await command("scp", [...scpArgs(), HOST_CONFIG,
+        `${config.user}@${config.host}:${config.remoteRoot}/config/host.conf`]);
+    }
     const built = await ssh(`cd ${config.remoteRoot} && make && if sudo -n systemctl cat two-forty.service >/dev/null 2>&1; then sudo -n systemctl restart two-forty.service; else (printf 'quit\\n' > run/control.fifo 2>/dev/null || true); sleep 1; setsid -f ./build/two-forty-host > run/two-forty.log 2>&1 </dev/null; fi`, 60_000);
     json(response, 200, { ok: true, output: built.stdout || "Build is up to date." });
   },

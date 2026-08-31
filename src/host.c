@@ -198,6 +198,7 @@ struct controller_binding {
 struct input_device {
     int fd;
     bool controller;
+    char name[128];
     bool keys[KEY_MAX + 1];
     int abs_values[ABS_MAX + 1];
     int abs_minimums[ABS_MAX + 1];
@@ -395,17 +396,40 @@ static bool save_bindings(const struct host *host)
     return true;
 }
 
-static void binding_name(const struct controller_binding *binding,
+static bool has_gp2040_controller(const struct host *host)
+{
+    for (int index = 0; index < host->inputs.count; ++index) {
+        const struct input_device *device = &host->inputs.devices[index];
+        if (device->controller && strcasestr(device->name, "gp2040") != NULL)
+            return true;
+    }
+    return false;
+}
+
+static void binding_name(const struct host *host,
+                         const struct controller_binding *binding,
                          char *name, size_t capacity)
 {
-    if (binding->kind == BINDING_ABS && binding->code == ABS_HAT0X)
+    bool gp2040 = has_gp2040_controller(host);
+    if (gp2040 && binding->kind == BINDING_KEY && binding->code == BTN_SOUTH)
+        copy_text(name, capacity, "Y");
+    else if (gp2040 && binding->kind == BINDING_KEY &&
+             binding->code == BTN_EAST)
+        copy_text(name, capacity, "B");
+    else if (gp2040 && binding->kind == BINDING_KEY &&
+             binding->code == BTN_TL2)
+        copy_text(name, capacity, "SELECT");
+    else if (gp2040 && binding->kind == BINDING_KEY &&
+             binding->code == BTN_TR2)
+        copy_text(name, capacity, "START");
+    else if (binding->kind == BINDING_ABS && binding->code == ABS_HAT0X)
         copy_text(name, capacity, binding->direction < 0 ? "DPAD LEFT" : "DPAD RIGHT");
     else if (binding->kind == BINDING_ABS && binding->code == ABS_HAT0Y)
         copy_text(name, capacity, binding->direction < 0 ? "DPAD UP" : "DPAD DOWN");
     else if (binding->kind == BINDING_KEY && binding->code == BTN_SOUTH)
-        copy_text(name, capacity, "SNES B");
+        copy_text(name, capacity, "B");
     else if (binding->kind == BINDING_KEY && binding->code == BTN_WEST)
-        copy_text(name, capacity, "SNES Y");
+        copy_text(name, capacity, "Y");
     else if (binding->kind == BINDING_KEY && binding->code == BTN_START)
         copy_text(name, capacity, "START");
     else if (binding->kind == BINDING_KEY && binding->code == BTN_SELECT)
@@ -417,6 +441,17 @@ static void binding_name(const struct controller_binding *binding,
                  binding->direction < 0 ? "NEG" : "POS");
     else
         copy_text(name, capacity, "UNBOUND");
+}
+
+static void action_label(void *context, enum two_forty_action action,
+                         char *text, size_t capacity)
+{
+    struct host *host = context;
+    if (action < 0 || action >= TWO_FORTY_ACTION_COUNT) {
+        copy_text(text, capacity, "UNBOUND");
+        return;
+    }
+    binding_name(host, &host->bindings[action], text, capacity);
 }
 
 static void fill_rect(void *context, int x, int y, int width, int height,
@@ -703,7 +738,7 @@ static void draw_launcher(struct host *host)
         fill_rect(host, 18 + drift + index * 40, 208, 40, 8,
                   bars[index][0], bars[index][1], bars[index][2]);
     draw_text(host, 20 + drift, 188, "TWO FORTY", 3, 238, 240, 232);
-    draw_text(host, 20 + drift, 160, "SELECT", 1, 112, 160, 170);
+    draw_text(host, 20 + drift, 160, "CHOOSE A GAME", 1, 112, 160, 170);
 
     if (host->game_count == 0)
         draw_text(host, 24 + drift, 134, "NO GAMES FOUND", 1, 230, 80, 70);
@@ -772,7 +807,7 @@ static void draw_controller_settings(struct host *host)
             copy_text(physical, sizeof(physical), host->capture_wait_release ?
                       "RELEASE" : "PRESS NOW");
         else
-            binding_name(&host->bindings[action], physical, sizeof(physical));
+            binding_name(host, &host->bindings[action], physical, sizeof(physical));
         draw_text(host, 112, item_y, physical, 1,
                   selected ? 120 : 92, selected ? 210 : 145,
                   selected ? 235 : 165);
@@ -971,6 +1006,7 @@ static void open_inputs(struct input_set *inputs)
 
         struct input_device *device = &inputs->devices[inputs->count];
         device->fd = fd;
+        copy_text(device->name, sizeof(device->name), name);
         for (unsigned int code = 0; code <= KEY_MAX; ++code) {
             if (input_bit(key_bits, code) && controller_button_code(code))
                 device->controller = true;
@@ -1322,7 +1358,7 @@ int main(void)
     host.api = (struct two_forty_host_api){.abi_version=TWO_FORTY_ABI_VERSION,
         .screen_width=host.mode.hdisplay,.screen_height=host.mode.vdisplay,
         .context=&host,.fill_rect=fill_rect,.play_sound=play_sound,
-        .draw_text=draw_text};
+        .draw_text=draw_text,.action_label=action_label};
     open_inputs(&host.inputs);
     mkdir("run", 0755);
     if (mkfifo("run/control.fifo", 0600) != 0 && errno != EEXIST) {

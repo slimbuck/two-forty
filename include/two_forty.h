@@ -3,8 +3,9 @@
 
 #include <linux/input.h>
 #include <stdbool.h>
+#include <stddef.h>
 
-#define TWO_FORTY_ABI_VERSION 4
+#define TWO_FORTY_ABI_VERSION 5
 
 enum two_forty_action {
     TWO_FORTY_ACTION_LEFT,
@@ -38,6 +39,8 @@ struct two_forty_host_api {
     void (*draw_text)(void *context, int x, int y, const char *text, int scale,
                       unsigned char red, unsigned char green,
                       unsigned char blue);
+    void (*action_label)(void *context, enum two_forty_action action,
+                         char *text, size_t capacity);
 };
 
 struct two_forty_game_api {
