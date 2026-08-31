@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Two Forty Control Room</title>
+  <meta name="description" content="Local development control panel for the Two Forty CRT console.">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
+      <div><h1>Two Forty</h1><p>Development control room</p></div>
+    </div>
+    <div class="connection"><span id="statusDot" class="status-dot"></span><span id="connectionText">Checking Pi…</span></div>
+  </header>
+
+  <main>
+    <section class="hero-grid">
+      <article class="panel monitor-panel">
+        <div class="panel-head"><div><span class="eyebrow">CRT output</span><h2>Live snapshot</h2></div><button id="snapshotBtn" class="button primary">Take snapshot</button></div>
+        <div class="monitor-shell"><div class="screen"><canvas id="snapshotCanvas" width="320" height="240"></canvas><div id="screenEmpty" class="screen-empty">No capture yet</div></div></div>
+        <div class="monitor-meta"><span id="captureName">Dashboard captures appear here</span><a id="downloadCapture" class="text-link hidden" download>Download PPM</a></div>
+      </article>
+
+      <article class="panel console-panel">
+        <div class="panel-head"><div><span class="eyebrow">Session</span><h2 id="modeTitle">Connecting…</h2></div><span id="modePill" class="pill">offline</span></div>
+        <dl class="metrics">
+          <div><dt>Output</dt><dd id="outputMode">—</dd></div>
+          <div><dt>Temperature</dt><dd id="temperature">—</dd></div>
+          <div><dt>Health</dt><dd id="powerState">—</dd></div>
+          <div><dt>Uptime</dt><dd id="uptime">—</dd></div>
+        </dl>
+        <label class="boot-target"><span>Boot directly into</span><select id="bootGameSelect"><option value="launcher">Game launcher</option></select></label>
+        <div class="button-row">
+          <button id="menuBtn" class="button">Return to menu</button>
+          <button id="reloadBtn" class="button">Reload game</button>
+        </div>
+        <div class="button-row">
+          <button id="deployBtn" class="button accent">Deploy + build</button>
+          <button id="restartBtn" class="button">Restart host</button>
+        </div>
+        <button id="poweroffBtn" class="button danger wide">Power down Pi</button>
+        <p id="actionStatus" class="action-status">Ready.</p>
+      </article>
+    </section>
+
+    <section class="panel games-panel">
+      <div class="panel-head"><div><span class="eyebrow">Library</span><h2>Games</h2></div><span class="hint">Each card maps directly to one folder under games/</span></div>
+      <div id="games" class="games-grid"></div>
+    </section>
+
+    <section id="editorPanel" class="panel editor-panel hidden">
+      <div class="panel-head"><div><span class="eyebrow">Plain-text settings</span><h2 id="editorTitle">Game configuration</h2></div><button id="closeEditor" class="icon-button" aria-label="Close editor">×</button></div>
+      <textarea id="configEditor" spellcheck="false" aria-label="Game configuration"></textarea>
+      <div class="editor-footer"><span>Saved locally; “Save + reload” also sends it to the Pi.</span><div class="button-row"><button id="saveLocalBtn" class="button">Save locally</button><button id="saveReloadBtn" class="button primary">Save + reload</button></div></div>
+    </section>
+
+    <section class="panel log-panel">
+      <div class="panel-head"><div><span class="eyebrow">Runtime</span><h2>Host log</h2></div><button id="refreshLogsBtn" class="button compact">Refresh</button></div>
+      <pre id="logs">No service log yet. The current foreground test remains controllable.</pre>
+    </section>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>
