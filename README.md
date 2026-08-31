@@ -27,12 +27,19 @@ Run from SSH while the CRT is connected:
 
 Controls:
 
-- Arrow keys or WASD: move the test card
-- Space: test the edge sound
-- Enter: toggle automatic movement
-- F1 or Escape: return from a game to the launcher
+- D-pad: move in the launcher and games
+- SNES B: jump
+- SNES Y: dash
+- Start: confirm
+- Select: return to the launcher
+- Arrow keys or WASD, Space/Z, X/Shift, Enter, F1/Escape: keyboard fallback
 - F12: save a snapshot from any screen
 - Q or Escape in the launcher: quit and restore the console framebuffer
+
+Choose **Controller Settings** in the CRT launcher to rebind any logical
+action. Select an action with the D-pad, press Start, release it, then press the
+controller button or D-pad direction to assign. Bindings are saved atomically
+on the Pi in `config/host.conf` and survive service restarts and reboots.
 
 The program uses `/dev/dri/card0` and reads Linux evdev keyboard devices under
 `/dev/input`. The `retro` user is already a member of the `video`, `render`,

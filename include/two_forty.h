@@ -4,11 +4,25 @@
 #include <linux/input.h>
 #include <stdbool.h>
 
-#define TWO_FORTY_ABI_VERSION 2
+#define TWO_FORTY_ABI_VERSION 3
+
+enum two_forty_action {
+    TWO_FORTY_ACTION_LEFT,
+    TWO_FORTY_ACTION_RIGHT,
+    TWO_FORTY_ACTION_UP,
+    TWO_FORTY_ACTION_DOWN,
+    TWO_FORTY_ACTION_JUMP,
+    TWO_FORTY_ACTION_DASH,
+    TWO_FORTY_ACTION_CONFIRM,
+    TWO_FORTY_ACTION_MENU,
+    TWO_FORTY_ACTION_COUNT
+};
 
 struct two_forty_input {
     bool keys[KEY_MAX + 1];
     bool pressed[KEY_MAX + 1];
+    bool actions[TWO_FORTY_ACTION_COUNT];
+    bool action_pressed[TWO_FORTY_ACTION_COUNT];
 };
 
 struct two_forty_host_api {

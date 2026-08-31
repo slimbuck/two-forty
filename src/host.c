@@ -185,12 +185,32 @@ extern void glReadPixels(GLint x, GLint y, GLsizei width, GLsizei height,
 
 #define MAX_INPUTS 32
 #define MAX_GAMES 32
+#define HOST_CONFIG_PATH "config/host.conf"
+
+enum binding_kind { BINDING_NONE, BINDING_KEY, BINDING_ABS };
+
+struct controller_binding {
+    enum binding_kind kind;
+    unsigned int code;
+    int direction;
+};
+
+struct input_device {
+    int fd;
+    bool controller;
+    bool keys[KEY_MAX + 1];
+    int abs_values[ABS_MAX + 1];
+    int abs_minimums[ABS_MAX + 1];
+    int abs_maximums[ABS_MAX + 1];
+    int abs_flats[ABS_MAX + 1];
+};
 
 struct framebuffer { int drm_fd; uint32_t fb_id; };
 
 struct input_set {
-    int fds[MAX_INPUTS];
+    struct input_device devices[MAX_INPUTS];
     int count;
+    bool previous_actions[TWO_FORTY_ACTION_COUNT];
     struct two_forty_input state;
 };
 
@@ -228,6 +248,13 @@ struct host {
     unsigned int snapshot_sequence;
     unsigned long frame_number;
     char boot_game_id[64];
+    struct controller_binding bindings[TWO_FORTY_ACTION_COUNT];
+    bool controller_settings;
+    int selected_action;
+    bool binding_capture;
+    bool capture_wait_release;
+    bool captured_binding_ready;
+    struct controller_binding captured_binding;
 };
 
 static volatile sig_atomic_t stop_requested;
@@ -249,6 +276,144 @@ static char *trim(char *text)
 static void copy_text(char *destination, size_t capacity, const char *source)
 {
     if (capacity > 0) snprintf(destination, capacity, "%s", source);
+}
+
+static const char *const action_config_keys[TWO_FORTY_ACTION_COUNT] = {
+    "bind_left", "bind_right", "bind_up", "bind_down",
+    "bind_jump", "bind_dash", "bind_confirm", "bind_menu"
+};
+
+static const char *const action_names[TWO_FORTY_ACTION_COUNT] = {
+    "LEFT", "RIGHT", "UP", "DOWN", "JUMP", "DASH", "CONFIRM", "MENU"
+};
+
+static void default_bindings(struct controller_binding *bindings)
+{
+    bindings[TWO_FORTY_ACTION_LEFT] =
+        (struct controller_binding){BINDING_ABS, ABS_HAT0X, -1};
+    bindings[TWO_FORTY_ACTION_RIGHT] =
+        (struct controller_binding){BINDING_ABS, ABS_HAT0X, 1};
+    bindings[TWO_FORTY_ACTION_UP] =
+        (struct controller_binding){BINDING_ABS, ABS_HAT0Y, -1};
+    bindings[TWO_FORTY_ACTION_DOWN] =
+        (struct controller_binding){BINDING_ABS, ABS_HAT0Y, 1};
+    bindings[TWO_FORTY_ACTION_JUMP] =
+        (struct controller_binding){BINDING_KEY, BTN_SOUTH, 0};
+    bindings[TWO_FORTY_ACTION_DASH] =
+        (struct controller_binding){BINDING_KEY, BTN_WEST, 0};
+    bindings[TWO_FORTY_ACTION_CONFIRM] =
+        (struct controller_binding){BINDING_KEY, BTN_START, 0};
+    bindings[TWO_FORTY_ACTION_MENU] =
+        (struct controller_binding){BINDING_KEY, BTN_SELECT, 0};
+}
+
+static bool parse_binding(const char *text, struct controller_binding *binding)
+{
+    unsigned int code = 0;
+    int direction = 0;
+    char trailing = '\0';
+    if (sscanf(text, "key:%u%c", &code, &trailing) == 1 && code <= KEY_MAX) {
+        *binding = (struct controller_binding){BINDING_KEY, code, 0};
+        return true;
+    }
+    if (sscanf(text, "abs:%u:%d%c", &code, &direction, &trailing) == 2 &&
+        code <= ABS_MAX && (direction == -1 || direction == 1)) {
+        *binding = (struct controller_binding){BINDING_ABS, code, direction};
+        return true;
+    }
+    return false;
+}
+
+static int binding_action_for_key(const char *key)
+{
+    for (int action = 0; action < TWO_FORTY_ACTION_COUNT; ++action)
+        if (strcmp(key, action_config_keys[action]) == 0) return action;
+    return -1;
+}
+
+static void write_binding(FILE *file, int action,
+                          const struct controller_binding *binding)
+{
+    if (binding->kind == BINDING_KEY)
+        fprintf(file, "%s=key:%u\n", action_config_keys[action], binding->code);
+    else if (binding->kind == BINDING_ABS)
+        fprintf(file, "%s=abs:%u:%d\n", action_config_keys[action],
+                binding->code, binding->direction);
+}
+
+static bool save_bindings(const struct host *host)
+{
+    FILE *source = fopen(HOST_CONFIG_PATH, "r");
+    FILE *target = fopen(HOST_CONFIG_PATH ".tmp", "w");
+    if (target == NULL) {
+        fprintf(stderr, "Cannot save controller bindings: %s\n", strerror(errno));
+        if (source != NULL) fclose(source);
+        return false;
+    }
+    bool written[TWO_FORTY_ACTION_COUNT] = {false};
+    bool saw_binding = false;
+    char line[512];
+    while (source != NULL && fgets(line, sizeof(line), source) != NULL) {
+        char parsed[sizeof(line)];
+        copy_text(parsed, sizeof(parsed), line);
+        char *entry = trim(parsed);
+        char *separator = strchr(entry, '=');
+        int action = -1;
+        if (separator != NULL) {
+            *separator = '\0';
+            action = binding_action_for_key(trim(entry));
+        }
+        if (action >= 0) {
+            if (!written[action]) {
+                write_binding(target, action, &host->bindings[action]);
+                written[action] = true;
+            }
+            saw_binding = true;
+        } else {
+            fputs(line, target);
+        }
+    }
+    if (source != NULL) fclose(source);
+    if (!saw_binding) fputs("\n# Controller bindings use Linux evdev key and axis codes.\n", target);
+    for (int action = 0; action < TWO_FORTY_ACTION_COUNT; ++action)
+        if (!written[action]) write_binding(target, action, &host->bindings[action]);
+    bool failed = fflush(target) != 0;
+    if (!failed && fsync(fileno(target)) != 0) failed = true;
+    if (fclose(target) != 0) failed = true;
+    if (!failed && rename(HOST_CONFIG_PATH ".tmp", HOST_CONFIG_PATH) != 0)
+        failed = true;
+    if (failed) {
+        fprintf(stderr, "Cannot finish saving controller bindings: %s\n",
+                strerror(errno));
+        remove(HOST_CONFIG_PATH ".tmp");
+        return false;
+    }
+    puts("Saved controller bindings to " HOST_CONFIG_PATH ".");
+    return true;
+}
+
+static void binding_name(const struct controller_binding *binding,
+                         char *name, size_t capacity)
+{
+    if (binding->kind == BINDING_ABS && binding->code == ABS_HAT0X)
+        copy_text(name, capacity, binding->direction < 0 ? "DPAD LEFT" : "DPAD RIGHT");
+    else if (binding->kind == BINDING_ABS && binding->code == ABS_HAT0Y)
+        copy_text(name, capacity, binding->direction < 0 ? "DPAD UP" : "DPAD DOWN");
+    else if (binding->kind == BINDING_KEY && binding->code == BTN_SOUTH)
+        copy_text(name, capacity, "SNES B");
+    else if (binding->kind == BINDING_KEY && binding->code == BTN_WEST)
+        copy_text(name, capacity, "SNES Y");
+    else if (binding->kind == BINDING_KEY && binding->code == BTN_START)
+        copy_text(name, capacity, "START");
+    else if (binding->kind == BINDING_KEY && binding->code == BTN_SELECT)
+        copy_text(name, capacity, "SELECT");
+    else if (binding->kind == BINDING_KEY)
+        snprintf(name, capacity, "BUTTON %u", binding->code);
+    else if (binding->kind == BINDING_ABS)
+        snprintf(name, capacity, "AXIS %u %s", binding->code,
+                 binding->direction < 0 ? "NEG" : "POS");
+    else
+        copy_text(name, capacity, "UNBOUND");
 }
 
 static void fill_rect(void *context, int x, int y, int width, int height,
@@ -348,7 +513,8 @@ static bool load_game(struct host *host, int index);
 
 static void load_host_config(struct host *host)
 {
-    FILE *file = fopen("config/host.conf", "r");
+    default_bindings(host->bindings);
+    FILE *file = fopen(HOST_CONFIG_PATH, "r");
     if (file == NULL) return;
     char line[512];
     while (fgets(line, sizeof(line), file) != NULL) {
@@ -359,8 +525,17 @@ static void load_host_config(struct host *host)
         *separator = '\0';
         char *key = trim(entry);
         char *value = trim(separator + 1);
-        if (strcmp(key, "boot_game") == 0)
+        if (strcmp(key, "boot_game") == 0) {
             copy_text(host->boot_game_id, sizeof(host->boot_game_id), value);
+        } else {
+            int action = binding_action_for_key(key);
+            struct controller_binding parsed;
+            if (action >= 0 && parse_binding(value, &parsed))
+                host->bindings[action] = parsed;
+            else if (action >= 0)
+                fprintf(stderr, "Ignoring invalid controller binding %s=%s\n",
+                        key, value);
+        }
     }
     fclose(file);
 }
@@ -525,36 +700,82 @@ static void draw_launcher(struct host *host)
         fill_rect(host, 18 + drift + index * 40, 208, 40, 8,
                   bars[index][0], bars[index][1], bars[index][2]);
     draw_text(host, 20 + drift, 188, "TWO FORTY", 3, 238, 240, 232);
-    draw_text(host, 20 + drift, 160, "SELECT A GAME", 1, 112, 160, 170);
+    draw_text(host, 20 + drift, 160, "SELECT", 1, 112, 160, 170);
 
     if (host->game_count == 0)
-        draw_text(host, 24 + drift, 132, "NO GAMES FOUND", 2, 230, 80, 70);
-    else {
-        for (int index = 0; index < host->game_count && index < 5; ++index) {
-            int item_y = 125 - index * 28;
-            bool selected = index == host->selected_game;
-            fill_rect(host, 18 + drift, item_y - 17, 284, 24,
-                      selected ? 28 : 14, selected ? 74 : 30, selected ? 84 : 40);
-            fill_rect(host, 24 + drift, item_y - 12, selected ? 5 : 2, 14,
-                      selected ? 244 : 70, selected ? 194 : 110, selected ? 70 : 120);
-            draw_text(host, 38 + drift, item_y, host->games[index].name, 2,
-                      selected ? 250 : 170, selected ? 248 : 185,
-                      selected ? 236 : 190);
-        }
+        draw_text(host, 24 + drift, 134, "NO GAMES FOUND", 1, 230, 80, 70);
+    for (int index = 0; index < host->game_count && index < 4; ++index) {
+        int item_y = 132 - index * 26;
+        bool selected = index == host->selected_game;
+        fill_rect(host, 18 + drift, item_y - 15, 284, 21,
+                  selected ? 28 : 14, selected ? 74 : 30, selected ? 84 : 40);
+        fill_rect(host, 24 + drift, item_y - 11, selected ? 5 : 2, 12,
+                  selected ? 244 : 70, selected ? 194 : 110, selected ? 70 : 120);
+        draw_text(host, 38 + drift, item_y, host->games[index].name, 2,
+                  selected ? 250 : 170, selected ? 248 : 185,
+                  selected ? 236 : 190);
     }
-    int power_y = 125 - host->game_count * 28;
-    bool power_selected = host->selected_game == host->game_count;
-    fill_rect(host, 18 + drift, power_y - 17, 284, 24,
+
+    int settings_y = 132 - host->game_count * 26;
+    bool settings_selected = host->selected_game == host->game_count;
+    fill_rect(host, 18 + drift, settings_y - 15, 284, 21,
+              settings_selected ? 42 : 20, settings_selected ? 65 : 35,
+              settings_selected ? 92 : 50);
+    fill_rect(host, 24 + drift, settings_y - 11, settings_selected ? 5 : 2, 12,
+              80, 170, 220);
+    draw_text(host, 38 + drift, settings_y, "CONTROLLER SETTINGS", 1,
+              settings_selected ? 250 : 165, settings_selected ? 248 : 185,
+              settings_selected ? 236 : 195);
+
+    int power_y = settings_y - 26;
+    bool power_selected = host->selected_game == host->game_count + 1;
+    fill_rect(host, 18 + drift, power_y - 15, 284, 21,
               power_selected ? 82 : 34, power_selected ? 31 : 23,
               power_selected ? 29 : 25);
-    fill_rect(host, 24 + drift, power_y - 12, power_selected ? 5 : 2, 14,
+    fill_rect(host, 24 + drift, power_y - 11, power_selected ? 5 : 2, 12,
               236, 84, 68);
-    draw_text(host, 38 + drift, power_y, "POWER OFF", 2,
+    draw_text(host, 38 + drift, power_y, "POWER OFF", 1,
               power_selected ? 255 : 190, power_selected ? 220 : 125,
               power_selected ? 210 : 120);
 
-    draw_text(host, 20 + drift, 15, "ARROWS  ENTER START  Q QUIT", 1,
+    draw_text(host, 20 + drift, 12, "DPAD MOVE  START SELECT", 1,
               105, 125, 130);
+    glDisable(GL_SCISSOR_TEST);
+}
+
+static void draw_controller_settings(struct host *host)
+{
+    glDisable(GL_SCISSOR_TEST);
+    glClearColor(0.012f, 0.019f, 0.032f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+    fill_rect(host, 12, 222, 296, 5, 40, 175, 212);
+    draw_text(host, 18, 207, "CONTROLLER SETTINGS", 2, 238, 240, 232);
+    draw_text(host, 18, 184, host->binding_capture ?
+              "RELEASE THEN PRESS A BUTTON" : "CHOOSE AN ACTION",
+              1, 110, 160, 174);
+
+    for (int action = 0; action < TWO_FORTY_ACTION_COUNT; ++action) {
+        int item_y = 163 - action * 19;
+        bool selected = action == host->selected_action;
+        fill_rect(host, 16, item_y - 13, 288, 17,
+                  selected ? 25 : 12, selected ? 68 : 29, selected ? 78 : 39);
+        fill_rect(host, 21, item_y - 10, selected ? 4 : 2, 10,
+                  selected ? 244 : 65, selected ? 194 : 115, selected ? 70 : 125);
+        draw_text(host, 31, item_y, action_names[action], 1,
+                  selected ? 250 : 165, selected ? 248 : 185,
+                  selected ? 236 : 190);
+        char physical[64];
+        if (selected && host->binding_capture)
+            copy_text(physical, sizeof(physical), host->capture_wait_release ?
+                      "RELEASE" : "PRESS NOW");
+        else
+            binding_name(&host->bindings[action], physical, sizeof(physical));
+        draw_text(host, 112, item_y, physical, 1,
+                  selected ? 120 : 92, selected ? 210 : 145,
+                  selected ? 235 : 165);
+    }
+    draw_text(host, 18, 9, "START BIND  SELECT BACK  ESC CANCEL", 1,
+              95, 118, 126);
     glDisable(GL_SCISSOR_TEST);
 }
 
@@ -696,6 +917,32 @@ static bool init_graphics(struct host *host)
     return true;
 }
 
+static bool input_bit(const unsigned char *bits, unsigned int code)
+{
+    return (bits[code / 8u] & (1u << (code % 8u))) != 0;
+}
+
+static bool controller_button_code(unsigned int code)
+{
+    return (code >= BTN_MISC && code <= BTN_9) ||
+           (code >= BTN_JOYSTICK && code < BTN_DIGI) ||
+           (code >= BTN_DPAD_UP && code <= BTN_DPAD_RIGHT) ||
+           (code >= BTN_TRIGGER_HAPPY1 && code <= BTN_TRIGGER_HAPPY40);
+}
+
+static int axis_direction(const struct input_device *device, unsigned int code,
+                          int value)
+{
+    int minimum = device->abs_minimums[code];
+    int maximum = device->abs_maximums[code];
+    int centre = minimum + (maximum - minimum) / 2;
+    int threshold = (maximum - minimum) / 4;
+    if (device->abs_flats[code] > threshold) threshold = device->abs_flats[code];
+    if (value < centre - threshold) return -1;
+    if (value > centre + threshold) return 1;
+    return 0;
+}
+
 static void open_inputs(struct input_set *inputs)
 {
     memset(inputs, 0, sizeof(*inputs));
@@ -706,22 +953,116 @@ static void open_inputs(struct input_set *inputs)
         if (fd < 0) continue;
         char name[128] = "unknown";
         ioctl(fd, EVIOCGNAME(sizeof(name)), name);
-        inputs->fds[inputs->count++] = fd;
-        printf("Input: %s (%s)\n", path, name);
+
+        unsigned char key_bits[(KEY_MAX + 8) / 8] = {0};
+        unsigned char abs_bits[(ABS_MAX + 8) / 8] = {0};
+        ioctl(fd, EVIOCGBIT(EV_KEY, sizeof(key_bits)), key_bits);
+        ioctl(fd, EVIOCGBIT(EV_ABS, sizeof(abs_bits)), abs_bits);
+
+        struct input_device *device = &inputs->devices[inputs->count];
+        device->fd = fd;
+        for (unsigned int code = 0; code <= KEY_MAX; ++code) {
+            if (input_bit(key_bits, code) && controller_button_code(code))
+                device->controller = true;
+        }
+        for (unsigned int code = 0; code <= ABS_MAX; ++code) {
+            if (!input_bit(abs_bits, code)) continue;
+            struct input_absinfo info;
+            if (ioctl(fd, EVIOCGABS(code), &info) == 0) {
+                device->abs_values[code] = info.value;
+                device->abs_minimums[code] = info.minimum;
+                device->abs_maximums[code] = info.maximum;
+                device->abs_flats[code] = info.flat;
+            }
+            if (code >= ABS_HAT0X && code <= ABS_HAT3Y)
+                device->controller = true;
+        }
+        if (strcasestr(name, "gamepad") != NULL ||
+            strcasestr(name, "controller") != NULL ||
+            strcasestr(name, "joystick") != NULL ||
+            strcasestr(name, "stick") != NULL ||
+            strcasestr(name, "gp2040") != NULL)
+            device->controller = true;
+        ++inputs->count;
+        printf("Input: %s (%s)%s\n", path, name,
+               device->controller ? " [controller]" : "");
+    }
+}
+
+static bool controller_buttons_released(const struct input_set *inputs)
+{
+    for (int index = 0; index < inputs->count; ++index) {
+        const struct input_device *device = &inputs->devices[index];
+        if (!device->controller) continue;
+        for (unsigned int code = 0; code <= KEY_MAX; ++code)
+            if (device->keys[code]) return false;
+    }
+    return true;
+}
+
+static bool binding_down(const struct input_set *inputs,
+                         const struct controller_binding *binding)
+{
+    for (int index = 0; index < inputs->count; ++index) {
+        const struct input_device *device = &inputs->devices[index];
+        if (!device->controller) continue;
+        if (binding->kind == BINDING_KEY && binding->code <= KEY_MAX &&
+            device->keys[binding->code]) return true;
+        if (binding->kind == BINDING_ABS && binding->code <= ABS_MAX &&
+            axis_direction(device, binding->code,
+                           device->abs_values[binding->code]) == binding->direction)
+            return true;
+    }
+    return false;
+}
+
+static void update_controller_actions(struct host *host)
+{
+    for (int action = 0; action < TWO_FORTY_ACTION_COUNT; ++action) {
+        bool down = binding_down(&host->inputs, &host->bindings[action]);
+        host->inputs.state.actions[action] = down;
+        host->inputs.state.action_pressed[action] =
+            down && !host->inputs.previous_actions[action];
+        host->inputs.previous_actions[action] = down;
     }
 }
 
 static void process_input(struct host *host, int fd)
 {
+    struct input_device *device = NULL;
+    for (int index = 0; index < host->inputs.count; ++index)
+        if (host->inputs.devices[index].fd == fd) device = &host->inputs.devices[index];
+    if (device == NULL) return;
+
     struct input_event events[32];
     ssize_t bytes;
     while ((bytes = read(fd, events, sizeof(events))) > 0) {
         size_t count = (size_t)bytes / sizeof(events[0]);
         for (size_t index = 0; index < count; ++index) {
-            if (events[index].type != EV_KEY || events[index].code > KEY_MAX) continue;
-            bool down = events[index].value != 0;
-            if (events[index].value == 1) host->inputs.state.pressed[events[index].code] = true;
-            host->inputs.state.keys[events[index].code] = down;
+            struct input_event *event = &events[index];
+            if (event->type == EV_KEY && event->code <= KEY_MAX) {
+                bool down = event->value != 0;
+                if (event->value == 1) host->inputs.state.pressed[event->code] = true;
+                host->inputs.state.keys[event->code] = down;
+                device->keys[event->code] = down;
+                if (device->controller && event->value == 1 &&
+                    host->binding_capture && !host->capture_wait_release) {
+                    host->captured_binding = (struct controller_binding){
+                        BINDING_KEY, event->code, 0};
+                    host->captured_binding_ready = true;
+                }
+            } else if (event->type == EV_ABS && event->code <= ABS_MAX) {
+                int old_direction = axis_direction(device, event->code,
+                                                   device->abs_values[event->code]);
+                device->abs_values[event->code] = event->value;
+                int new_direction = axis_direction(device, event->code, event->value);
+                if (device->controller && old_direction == 0 && new_direction != 0 &&
+                    host->binding_capture && !host->capture_wait_release) {
+                    host->captured_binding = (struct controller_binding){
+                        BINDING_ABS, event->code, new_direction};
+                    host->captured_binding_ready = true;
+                }
+            }
         }
     }
 }
@@ -729,19 +1070,68 @@ static void process_input(struct host *host, int fd)
 static void update_host(struct host *host)
 {
     struct two_forty_input *input = &host->inputs.state;
+    update_controller_actions(host);
     if (input->pressed[KEY_F12]) snapshot_requested = 1;
     if (host->active_game != NULL) {
-        if (input->pressed[KEY_ESC] || input->pressed[KEY_F1]) unload_game(host);
-        else host->game_api->update(input);
+        if (input->pressed[KEY_ESC] || input->pressed[KEY_F1] ||
+            input->action_pressed[TWO_FORTY_ACTION_MENU]) {
+            unload_game(host);
+            host->controller_settings = false;
+        } else {
+            host->game_api->update(input);
+        }
+    } else if (host->controller_settings) {
+        if (host->binding_capture) {
+            if (input->pressed[KEY_ESC]) {
+                host->binding_capture = false;
+                host->capture_wait_release = false;
+                host->captured_binding_ready = false;
+            } else if (host->captured_binding_ready) {
+                host->bindings[host->selected_action] = host->captured_binding;
+                host->binding_capture = false;
+                host->captured_binding_ready = false;
+                host->capture_wait_release = true;
+                save_bindings(host);
+            } else if (host->capture_wait_release &&
+                       controller_buttons_released(&host->inputs)) {
+                host->capture_wait_release = false;
+            }
+        } else if (host->capture_wait_release) {
+            if (controller_buttons_released(&host->inputs))
+                host->capture_wait_release = false;
+        } else {
+            if (input->pressed[KEY_UP] || input->pressed[KEY_W] ||
+                input->action_pressed[TWO_FORTY_ACTION_UP])
+                host->selected_action = (host->selected_action +
+                    TWO_FORTY_ACTION_COUNT - 1) % TWO_FORTY_ACTION_COUNT;
+            if (input->pressed[KEY_DOWN] || input->pressed[KEY_S] ||
+                input->action_pressed[TWO_FORTY_ACTION_DOWN])
+                host->selected_action = (host->selected_action + 1) %
+                    TWO_FORTY_ACTION_COUNT;
+            if (input->pressed[KEY_ENTER] ||
+                input->action_pressed[TWO_FORTY_ACTION_CONFIRM]) {
+                host->binding_capture = true;
+                host->capture_wait_release = true;
+                host->captured_binding_ready = false;
+            } else if (input->pressed[KEY_ESC] ||
+                       input->action_pressed[TWO_FORTY_ACTION_MENU]) {
+                host->controller_settings = false;
+            }
+        }
     } else {
-        int item_count = host->game_count + 1;
-        if (input->pressed[KEY_UP] || input->pressed[KEY_W])
+        int item_count = host->game_count + 2;
+        if (input->pressed[KEY_UP] || input->pressed[KEY_W] ||
+            input->action_pressed[TWO_FORTY_ACTION_UP])
             host->selected_game = (host->selected_game + item_count - 1) % item_count;
-        if (input->pressed[KEY_DOWN] || input->pressed[KEY_S])
+        if (input->pressed[KEY_DOWN] || input->pressed[KEY_S] ||
+            input->action_pressed[TWO_FORTY_ACTION_DOWN])
             host->selected_game = (host->selected_game + 1) % item_count;
-        if (input->pressed[KEY_ENTER]) {
+        if (input->pressed[KEY_ENTER] ||
+            input->action_pressed[TWO_FORTY_ACTION_CONFIRM]) {
             if (host->selected_game < host->game_count)
                 load_game(host, host->selected_game);
+            else if (host->selected_game == host->game_count)
+                host->controller_settings = true;
             else
                 power_down_pi();
         }
@@ -753,6 +1143,7 @@ static void update_host(struct host *host)
 static void draw_host(struct host *host)
 {
     if (host->active_game != NULL) host->game_api->render();
+    else if (host->controller_settings) draw_controller_settings(host);
     else draw_launcher(host);
     glDisable(GL_SCISSOR_TEST);
     if (snapshot_requested) { snapshot_requested = 0; save_snapshot(host); }
@@ -771,7 +1162,7 @@ static void wait_for_events(struct host *host)
     fds[0].fd = host->drm_fd; fds[0].events = POLLIN;
     fds[1].fd = host->control_fd; fds[1].events = POLLIN;
     for (int index = 0; index < host->inputs.count; ++index) {
-        fds[index + 2].fd = host->inputs.fds[index]; fds[index + 2].events = POLLIN;
+        fds[index + 2].fd = host->inputs.devices[index].fd; fds[index + 2].events = POLLIN;
     }
     drmEventContext context = {.version=DRM_EVENT_CONTEXT_VERSION,
         .vblank_handler=NULL,.page_flip_handler=flip_handler};
@@ -824,7 +1215,7 @@ static bool next_frame(struct host *host)
 static void cleanup(struct host *host)
 {
     unload_game(host);
-    for (int index = 0; index < host->inputs.count; ++index) close(host->inputs.fds[index]);
+    for (int index = 0; index < host->inputs.count; ++index) close(host->inputs.devices[index].fd);
     if (host->saved_crtc != NULL && host->drm_fd >= 0)
         drmModeSetCrtc(host->drm_fd, host->saved_crtc->crtc_id,
             host->saved_crtc->buffer_id, host->saved_crtc->x, host->saved_crtc->y,

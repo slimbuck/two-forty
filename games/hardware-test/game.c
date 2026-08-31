@@ -174,12 +174,18 @@ static void game_update(const struct two_forty_input *input)
     const int manual_speed = 3;
     int dx = 0;
     int dy = 0;
-    if (input->keys[KEY_LEFT] || input->keys[KEY_A]) dx -= manual_speed;
-    if (input->keys[KEY_RIGHT] || input->keys[KEY_D]) dx += manual_speed;
-    if (input->keys[KEY_UP] || input->keys[KEY_W]) dy += manual_speed;
-    if (input->keys[KEY_DOWN] || input->keys[KEY_S]) dy -= manual_speed;
-    if (input->pressed[KEY_ENTER]) automatic = !automatic;
-    if (input->pressed[KEY_SPACE])
+    if (input->keys[KEY_LEFT] || input->keys[KEY_A] ||
+        input->actions[TWO_FORTY_ACTION_LEFT]) dx -= manual_speed;
+    if (input->keys[KEY_RIGHT] || input->keys[KEY_D] ||
+        input->actions[TWO_FORTY_ACTION_RIGHT]) dx += manual_speed;
+    if (input->keys[KEY_UP] || input->keys[KEY_W] ||
+        input->actions[TWO_FORTY_ACTION_UP]) dy += manual_speed;
+    if (input->keys[KEY_DOWN] || input->keys[KEY_S] ||
+        input->actions[TWO_FORTY_ACTION_DOWN]) dy -= manual_speed;
+    if (input->pressed[KEY_ENTER] ||
+        input->action_pressed[TWO_FORTY_ACTION_CONFIRM]) automatic = !automatic;
+    if (input->pressed[KEY_SPACE] ||
+        input->action_pressed[TWO_FORTY_ACTION_JUMP])
         host->play_sound(host->context, settings.sound_device, settings.sound);
 
     if (dx != 0 || dy != 0) {

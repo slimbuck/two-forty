@@ -378,21 +378,25 @@ static void collect_world_items(void)
 static bool pressed_jump(const struct two_forty_input *input)
 {
     return input->pressed[KEY_Z] || input->pressed[KEY_SPACE] ||
-           input->pressed[KEY_UP] || input->pressed[KEY_W];
+           input->pressed[KEY_UP] || input->pressed[KEY_W] ||
+           input->action_pressed[TWO_FORTY_ACTION_JUMP];
 }
 
 static bool held_jump(const struct two_forty_input *input)
 {
     return input->keys[KEY_Z] || input->keys[KEY_SPACE] ||
-           input->keys[KEY_UP] || input->keys[KEY_W];
+           input->keys[KEY_UP] || input->keys[KEY_W] ||
+           input->actions[TWO_FORTY_ACTION_JUMP];
 }
 
 static void update_play(const struct two_forty_input *input)
 {
     if (input->pressed[KEY_R]) { respawn(); return; }
     int direction = 0;
-    if (input->keys[KEY_LEFT] || input->keys[KEY_A]) direction--;
-    if (input->keys[KEY_RIGHT] || input->keys[KEY_D]) direction++;
+    if (input->keys[KEY_LEFT] || input->keys[KEY_A] ||
+        input->actions[TWO_FORTY_ACTION_LEFT]) direction--;
+    if (input->keys[KEY_RIGHT] || input->keys[KEY_D] ||
+        input->actions[TWO_FORTY_ACTION_RIGHT]) direction++;
     if (direction) facing = direction;
 
     if (pressed_jump(input)) jump_buffer = settings.jump_buffer_frames;
@@ -410,7 +414,8 @@ static void update_play(const struct two_forty_input *input)
     }
 
     bool dash_pressed = input->pressed[KEY_X] || input->pressed[KEY_LEFTSHIFT] ||
-                        input->pressed[KEY_RIGHTSHIFT];
+                        input->pressed[KEY_RIGHTSHIFT] ||
+                        input->action_pressed[TWO_FORTY_ACTION_DASH];
     if (dash_pressed && dash_available && dash_timer == 0) {
         dash_timer = settings.dash_frames;
         dash_available = false;
@@ -632,14 +637,16 @@ static void game_update(const struct two_forty_input *input)
     frame_number++; update_particles();
     if (phase==PHASE_TITLE) {
         title_timer++;
-        if (input->pressed[KEY_ENTER] || pressed_jump(input) ||
+        if (input->pressed[KEY_ENTER] ||
+            input->action_pressed[TWO_FORTY_ACTION_CONFIRM] || pressed_jump(input) ||
             (settings.title_frames > 0 && title_timer >= settings.title_frames)) new_run();
     } else if (phase==PHASE_PLAY) update_play(input);
     else if (phase==PHASE_DEAD) {
         if (--death_timer<=0) respawn();
     } else if (phase==PHASE_WIN) {
         win_timer++;
-        if (input->pressed[KEY_ENTER]) new_run();
+        if (input->pressed[KEY_ENTER] ||
+            input->action_pressed[TWO_FORTY_ACTION_CONFIRM]) new_run();
     }
 }
 
