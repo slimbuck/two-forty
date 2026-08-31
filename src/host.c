@@ -211,6 +211,8 @@ struct input_set {
     struct input_device devices[MAX_INPUTS];
     int count;
     bool previous_actions[TWO_FORTY_ACTION_COUNT];
+    bool controller_up_pressed;
+    bool controller_down_pressed;
     struct two_forty_input state;
 };
 
@@ -738,7 +740,7 @@ static void draw_launcher(struct host *host)
               power_selected ? 255 : 190, power_selected ? 220 : 125,
               power_selected ? 210 : 120);
 
-    draw_text(host, 20 + drift, 12, "DPAD MOVE  START SELECT", 1,
+    draw_text(host, 20 + drift, 12, "DPAD MOVE  ANY BUTTON SELECT", 1,
               105, 125, 130);
     glDisable(GL_SCISSOR_TEST);
 }
@@ -774,7 +776,7 @@ static void draw_controller_settings(struct host *host)
                   selected ? 120 : 92, selected ? 210 : 145,
                   selected ? 235 : 165);
     }
-    draw_text(host, 18, 9, "START BIND  SELECT BACK  ESC CANCEL", 1,
+    draw_text(host, 18, 9, "ANY BUTTON BIND  SELECT BACK", 1,
               95, 118, 126);
     glDisable(GL_SCISSOR_TEST);
 }
@@ -930,6 +932,13 @@ static bool controller_button_code(unsigned int code)
            (code >= BTN_TRIGGER_HAPPY1 && code <= BTN_TRIGGER_HAPPY40);
 }
 
+static bool controller_direction_code(unsigned int code)
+{
+    return code == KEY_UP || code == KEY_DOWN || code == KEY_LEFT ||
+           code == KEY_RIGHT ||
+           (code >= BTN_DPAD_UP && code <= BTN_DPAD_RIGHT);
+}
+
 static int axis_direction(const struct input_device *device, unsigned int code,
                           int value)
 {
@@ -1045,6 +1054,15 @@ static void process_input(struct host *host, int fd)
                 if (event->value == 1) host->inputs.state.pressed[event->code] = true;
                 host->inputs.state.keys[event->code] = down;
                 device->keys[event->code] = down;
+                if (device->controller && event->value == 1) {
+                    if (event->code == KEY_UP || event->code == BTN_DPAD_UP)
+                        host->inputs.controller_up_pressed = true;
+                    else if (event->code == KEY_DOWN ||
+                             event->code == BTN_DPAD_DOWN)
+                        host->inputs.controller_down_pressed = true;
+                    if (!controller_direction_code(event->code))
+                        host->inputs.state.controller_pressed = true;
+                }
                 if (device->controller && event->value == 1 &&
                     host->binding_capture && !host->capture_wait_release) {
                     host->captured_binding = (struct controller_binding){
@@ -1056,6 +1074,14 @@ static void process_input(struct host *host, int fd)
                                                    device->abs_values[event->code]);
                 device->abs_values[event->code] = event->value;
                 int new_direction = axis_direction(device, event->code, event->value);
+                if (device->controller && old_direction == 0 &&
+                    new_direction != 0 &&
+                    (event->code == ABS_Y || event->code == ABS_HAT0Y)) {
+                    if (new_direction < 0)
+                        host->inputs.controller_up_pressed = true;
+                    else
+                        host->inputs.controller_down_pressed = true;
+                }
                 if (device->controller && old_direction == 0 && new_direction != 0 &&
                     host->binding_capture && !host->capture_wait_release) {
                     host->captured_binding = (struct controller_binding){
@@ -1101,43 +1127,52 @@ static void update_host(struct host *host)
                 host->capture_wait_release = false;
         } else {
             if (input->pressed[KEY_UP] || input->pressed[KEY_W] ||
-                input->action_pressed[TWO_FORTY_ACTION_UP])
+                input->action_pressed[TWO_FORTY_ACTION_UP] ||
+                host->inputs.controller_up_pressed)
                 host->selected_action = (host->selected_action +
                     TWO_FORTY_ACTION_COUNT - 1) % TWO_FORTY_ACTION_COUNT;
             if (input->pressed[KEY_DOWN] || input->pressed[KEY_S] ||
-                input->action_pressed[TWO_FORTY_ACTION_DOWN])
+                input->action_pressed[TWO_FORTY_ACTION_DOWN] ||
+                host->inputs.controller_down_pressed)
                 host->selected_action = (host->selected_action + 1) %
                     TWO_FORTY_ACTION_COUNT;
-            if (input->pressed[KEY_ENTER] ||
-                input->action_pressed[TWO_FORTY_ACTION_CONFIRM]) {
+            if (input->pressed[KEY_ESC] ||
+                input->action_pressed[TWO_FORTY_ACTION_MENU]) {
+                host->controller_settings = false;
+            } else if (input->pressed[KEY_ENTER] ||
+                       input->action_pressed[TWO_FORTY_ACTION_CONFIRM] ||
+                       input->controller_pressed) {
                 host->binding_capture = true;
                 host->capture_wait_release = true;
                 host->captured_binding_ready = false;
-            } else if (input->pressed[KEY_ESC] ||
-                       input->action_pressed[TWO_FORTY_ACTION_MENU]) {
-                host->controller_settings = false;
             }
         }
     } else {
         int item_count = host->game_count + 2;
         if (input->pressed[KEY_UP] || input->pressed[KEY_W] ||
-            input->action_pressed[TWO_FORTY_ACTION_UP])
+            input->action_pressed[TWO_FORTY_ACTION_UP] ||
+            host->inputs.controller_up_pressed)
             host->selected_game = (host->selected_game + item_count - 1) % item_count;
         if (input->pressed[KEY_DOWN] || input->pressed[KEY_S] ||
-            input->action_pressed[TWO_FORTY_ACTION_DOWN])
+            input->action_pressed[TWO_FORTY_ACTION_DOWN] ||
+            host->inputs.controller_down_pressed)
             host->selected_game = (host->selected_game + 1) % item_count;
-        if (input->pressed[KEY_ENTER] ||
-            input->action_pressed[TWO_FORTY_ACTION_CONFIRM]) {
+        bool confirmed = input->pressed[KEY_ENTER] ||
+            input->action_pressed[TWO_FORTY_ACTION_CONFIRM];
+        if (confirmed || input->controller_pressed) {
             if (host->selected_game < host->game_count)
                 load_game(host, host->selected_game);
             else if (host->selected_game == host->game_count)
                 host->controller_settings = true;
-            else
+            else if (confirmed)
                 power_down_pi();
         }
         if (input->pressed[KEY_Q] || input->pressed[KEY_ESC]) host->running = false;
     }
     memset(input->pressed, 0, sizeof(input->pressed));
+    input->controller_pressed = false;
+    host->inputs.controller_up_pressed = false;
+    host->inputs.controller_down_pressed = false;
 }
 
 static void draw_host(struct host *host)

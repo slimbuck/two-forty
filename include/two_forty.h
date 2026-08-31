@@ -4,7 +4,7 @@
 #include <linux/input.h>
 #include <stdbool.h>
 
-#define TWO_FORTY_ABI_VERSION 3
+#define TWO_FORTY_ABI_VERSION 4
 
 enum two_forty_action {
     TWO_FORTY_ACTION_LEFT,
@@ -23,6 +23,7 @@ struct two_forty_input {
     bool pressed[KEY_MAX + 1];
     bool actions[TWO_FORTY_ACTION_COUNT];
     bool action_pressed[TWO_FORTY_ACTION_COUNT];
+    bool controller_pressed;
 };
 
 struct two_forty_host_api {

@@ -646,7 +646,8 @@ static void game_update(const struct two_forty_input *input)
     } else if (phase==PHASE_WIN) {
         win_timer++;
         if (input->pressed[KEY_ENTER] ||
-            input->action_pressed[TWO_FORTY_ACTION_CONFIRM]) new_run();
+            input->action_pressed[TWO_FORTY_ACTION_CONFIRM] ||
+            input->controller_pressed) new_run();
     }
 }
 

@@ -37,9 +37,11 @@ Controls:
 - Q or Escape in the launcher: quit and restore the console framebuffer
 
 Choose **Controller Settings** in the CRT launcher to rebind any logical
-action. Select an action with the D-pad, press Start, release it, then press the
-controller button or D-pad direction to assign. Bindings are saved atomically
-on the Pi in `config/host.conf` and survive service restarts and reboots.
+action. Raw D-pad input navigates the launcher even before bindings are valid.
+Select an action, press any non-direction controller button, release it, then
+press the controller button or D-pad direction to assign. Bindings are saved
+atomically on the Pi in `config/host.conf` and survive service restarts and
+reboots.
 
 The program uses `/dev/dri/card0` and reads Linux evdev keyboard devices under
 `/dev/input`. The `retro` user is already a member of the `video`, `render`,
