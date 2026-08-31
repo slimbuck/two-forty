@@ -5,6 +5,7 @@ let games = [];
 let activeGame = "";
 let editingGame = "";
 let bootGame = "launcher";
+let levelState = null;
 
 async function api(url, options = {}) {
   const response = await fetch(url, options);
@@ -82,6 +83,7 @@ function renderGames() {
         `<a class="asset" href="${asset.url}" target="_blank" title="${asset.size} bytes">${escapeHtml(asset.name)}</a>`).join("")}</div>
       <div class="button-row">
         <button class="button primary" data-launch="${game.id}">Launch</button>
+        ${(game.editors || []).map((editor) => `<button class="button" data-level-game="${game.id}" data-level-editor="${editor.id}">Edit ${escapeHtml(editor.name)}</button>`).join("")}
         <button class="button" data-edit="${game.id}">Edit settings</button>
       </div>
     </article>`).join("");
@@ -92,6 +94,8 @@ function renderGames() {
       await new Promise((resolve) => setTimeout(resolve, 250)); await refreshStatus();
     })));
   root.querySelectorAll("[data-edit]").forEach((button) => button.addEventListener("click", () => openEditor(button.dataset.edit)));
+  root.querySelectorAll("[data-level-editor]").forEach((button) => button.addEventListener("click", () =>
+    openLevelEditor(button.dataset.levelGame, button.dataset.levelEditor)));
 }
 
 function escapeHtml(text) {
@@ -114,6 +118,7 @@ async function openEditor(id) {
   editingGame = id;
   $("#editorTitle").textContent = `${games.find((game) => game.id === id)?.name || id} configuration`;
   $("#configEditor").value = data.text;
+  $("#levelEditorPanel").classList.add("hidden");
   $("#editorPanel").classList.remove("hidden");
   $("#editorPanel").scrollIntoView({ behavior:"smooth", block:"start" });
 }
@@ -125,6 +130,228 @@ async function saveConfig(deploy) {
     body:JSON.stringify({ text:$("#configEditor").value, deploy }),
   });
   await loadGames();
+}
+
+function parseLevelText(text) {
+  const lines = text.replace(/\r/g, "").split("\n");
+  const comments = lines.filter((line) => line.startsWith("# "));
+  const sourceRows = lines.filter((line) => line && !line.startsWith("# "));
+  const width = Math.max(1, ...sourceRows.map((row) => [...row].length));
+  const empty = levelState.editor.empty;
+  const rows = (sourceRows.length ? sourceRows : [empty]).map((row) =>
+    [...row].concat(Array(width).fill(empty)).slice(0, width));
+  return { comments, rows };
+}
+
+function levelText() {
+  const body = levelState.rows.map((row) => row.join("")).join("\n");
+  return `${levelState.comments.join("\n")}${levelState.comments.length ? "\n" : ""}${body}\n`;
+}
+
+function copyRows(rows = levelState.rows) {
+  return rows.map((row) => [...row]);
+}
+
+function restoreRows(rows) {
+  levelState.rows = copyRows(rows);
+  renderLevel();
+}
+
+function checkpointLevel() {
+  levelState.undo.push(copyRows());
+  if (levelState.undo.length > 100) levelState.undo.shift();
+  levelState.redo = [];
+}
+
+function changeHistory(from, to) {
+  if (!levelState || !levelState[from].length) return;
+  levelState[to].push(copyRows());
+  restoreRows(levelState[from].pop());
+}
+
+function validateLevel() {
+  const errors = [];
+  const palette = new Map(levelState.editor.palette.map((tile) => [tile.value, tile]));
+  const counts = Object.fromEntries(levelState.editor.palette.map((tile) => [tile.value, 0]));
+  levelState.rows.forEach((row, y) => row.forEach((value, x) => {
+    if (!palette.has(value)) errors.push(`Unknown tile ${JSON.stringify(value)} at ${x + 1}, ${y + 1}.`);
+    else counts[value]++;
+  }));
+  levelState.editor.palette.forEach((tile) => {
+    if (tile.minimum !== undefined && counts[tile.value] < tile.minimum)
+      errors.push(`${tile.name} requires at least ${tile.minimum}; found ${counts[tile.value]}.`);
+    if (tile.maximum !== undefined && counts[tile.value] > tile.maximum)
+      errors.push(`${tile.name} allows at most ${tile.maximum}; found ${counts[tile.value]}.`);
+  });
+  return errors;
+}
+
+function updateLevelState() {
+  if (!levelState) return;
+  const errors = validateLevel();
+  const validation = $("#levelValidation");
+  validation.textContent = errors.length ? errors[0] : "Level is valid";
+  validation.title = errors.join("\n");
+  validation.classList.toggle("invalid", errors.length > 0);
+  $("#levelDirty").textContent = levelText() === levelState.savedText ?
+    "No unsaved changes." : "Unsaved changes.";
+  $("#levelWidth").value = levelState.rows[0].length;
+  $("#levelHeight").value = levelState.rows.length;
+  $("#undoLevel").disabled = !levelState.undo.length;
+  $("#redoLevel").disabled = !levelState.redo.length;
+  $("#saveLevelLocal").disabled = errors.length > 0;
+  $("#saveLevelPlay").disabled = errors.length > 0;
+}
+
+function renderLevel() {
+  if (!levelState) return;
+  const canvas = $("#levelCanvas");
+  const cell = levelState.cell;
+  const width = levelState.rows[0].length;
+  const height = levelState.rows.length;
+  canvas.width = width * cell;
+  canvas.height = height * cell;
+  const context = canvas.getContext("2d");
+  const palette = new Map(levelState.editor.palette.map((tile) => [tile.value, tile]));
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  context.font = `700 ${Math.max(8, cell - 7)}px ui-monospace, monospace`;
+  levelState.rows.forEach((row, y) => row.forEach((value, x) => {
+    const tile = palette.get(value);
+    context.fillStyle = tile?.color || "#ff00ff";
+    context.fillRect(x * cell, y * cell, cell, cell);
+    if (value !== levelState.editor.empty && cell >= 16) {
+      context.fillStyle = "rgba(0,0,0,.68)";
+      context.fillText(value, x * cell + cell / 2, y * cell + cell / 2 + .5);
+    }
+  }));
+  if (cell >= 12) {
+    context.beginPath();
+    for (let x = 0; x <= width; x++) { context.moveTo(x * cell + .5, 0); context.lineTo(x * cell + .5, height * cell); }
+    for (let y = 0; y <= height; y++) { context.moveTo(0, y * cell + .5); context.lineTo(width * cell, y * cell + .5); }
+    context.strokeStyle = "rgba(255,255,255,.08)";
+    context.lineWidth = 1;
+    context.stroke();
+  }
+  const viewport = levelState.editor.viewport;
+  context.save();
+  context.setLineDash([7, 5]);
+  context.strokeStyle = "rgba(243,184,69,.9)";
+  context.lineWidth = 2;
+  for (let x = viewport.width; x < width; x += viewport.width) {
+    context.beginPath(); context.moveTo(x * cell, 0); context.lineTo(x * cell, height * cell); context.stroke();
+  }
+  for (let y = viewport.height; y < height; y += viewport.height) {
+    context.beginPath(); context.moveTo(0, y * cell); context.lineTo(width * cell, y * cell); context.stroke();
+  }
+  context.restore();
+  updateLevelState();
+}
+
+function renderLevelPalette() {
+  const palette = $("#tilePalette");
+  palette.innerHTML = levelState.editor.palette.map((tile) => `
+    <button class="tile-choice ${tile.value === levelState.tile ? "active" : ""}" data-tile="${escapeHtml(tile.value)}">
+      <span class="tile-swatch" style="background:${tile.color}">${escapeHtml(tile.value)}</span><span class="tile-name">${escapeHtml(tile.name)}</span>
+    </button>`).join("");
+  palette.querySelectorAll("[data-tile]").forEach((button) => button.addEventListener("click", () => {
+    levelState.tile = button.dataset.tile;
+    if (levelState.tool === "erase") selectLevelTool("pencil");
+    renderLevelPalette();
+  }));
+}
+
+function selectLevelTool(tool) {
+  levelState.tool = tool;
+  $("#levelTools").querySelectorAll("[data-tool]").forEach((button) =>
+    button.classList.toggle("active", button.dataset.tool === tool));
+}
+
+async function openLevelEditor(gameId, editorId) {
+  if (levelState && levelText() !== levelState.savedText &&
+      !confirm("Discard the unsaved level changes?")) return;
+  const data = await api(`/api/games/${encodeURIComponent(gameId)}/editors/${encodeURIComponent(editorId)}`);
+  levelState = { gameId, editorId, editor:data.editor, hash:data.hash, savedText:data.text,
+    comments:[], rows:[], cell:16, tile:data.editor.palette.find((tile) => tile.value !== data.editor.empty)?.value || data.editor.empty,
+    tool:"pencil", undo:[], redo:[], drawing:false, start:null, last:null };
+  Object.assign(levelState, parseLevelText(data.text));
+  $("#editorPanel").classList.add("hidden");
+  $("#levelEditorTitle").textContent = `${games.find((game) => game.id === gameId)?.name || gameId} · ${data.editor.name}`;
+  $("#levelZoom").value = String(levelState.cell);
+  selectLevelTool("pencil");
+  renderLevelPalette();
+  renderLevel();
+  $("#levelEditorPanel").classList.remove("hidden");
+  $("#levelEditorPanel").scrollIntoView({ behavior:"smooth", block:"start" });
+}
+
+function cellAt(event) {
+  const canvas = $("#levelCanvas");
+  const bounds = canvas.getBoundingClientRect();
+  return {
+    x: Math.floor((event.clientX - bounds.left) * canvas.width / bounds.width / levelState.cell),
+    y: Math.floor((event.clientY - bounds.top) * canvas.height / bounds.height / levelState.cell),
+  };
+}
+
+function insideLevel(point) {
+  return point.x >= 0 && point.y >= 0 && point.y < levelState.rows.length && point.x < levelState.rows[0].length;
+}
+
+function paintCell(point, value) {
+  if (insideLevel(point)) levelState.rows[point.y][point.x] = value;
+}
+
+function paintLine(from, to, value) {
+  let x = from.x, y = from.y;
+  const dx = Math.abs(to.x - x), sx = x < to.x ? 1 : -1;
+  const dy = -Math.abs(to.y - y), sy = y < to.y ? 1 : -1;
+  let error = dx + dy;
+  while (true) {
+    paintCell({ x, y }, value);
+    if (x === to.x && y === to.y) break;
+    const doubled = 2 * error;
+    if (doubled >= dy) { error += dy; x += sx; }
+    if (doubled <= dx) { error += dx; y += sy; }
+  }
+}
+
+function paintRectangle(from, to, value) {
+  const left = Math.min(from.x, to.x), right = Math.max(from.x, to.x);
+  const top = Math.min(from.y, to.y), bottom = Math.max(from.y, to.y);
+  for (let x = left; x <= right; x++) { paintCell({ x, y:top }, value); paintCell({ x, y:bottom }, value); }
+  for (let y = top; y <= bottom; y++) { paintCell({ x:left, y }, value); paintCell({ x:right, y }, value); }
+}
+
+function floodFill(start, replacement) {
+  if (!insideLevel(start)) return;
+  const target = levelState.rows[start.y][start.x];
+  if (target === replacement) return;
+  const pending = [start];
+  while (pending.length) {
+    const point = pending.pop();
+    if (!insideLevel(point) || levelState.rows[point.y][point.x] !== target) continue;
+    levelState.rows[point.y][point.x] = replacement;
+    pending.push({x:point.x-1,y:point.y},{x:point.x+1,y:point.y},{x:point.x,y:point.y-1},{x:point.x,y:point.y+1});
+  }
+}
+
+async function saveLevel(play) {
+  const result = await api(`/api/games/${encodeURIComponent(levelState.gameId)}/editors/${encodeURIComponent(levelState.editorId)}`, {
+    method:"PUT", headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({ text:levelText(), hash:levelState.hash, play }),
+  });
+  levelState.hash = result.hash;
+  levelState.savedText = levelText();
+  updateLevelState();
+  if (play) { activeGame = levelState.gameId; setTimeout(refreshStatus, 350); }
+}
+
+function closeLevelEditor() {
+  if (levelState && levelText() !== levelState.savedText &&
+      !confirm("Close the editor and discard the unsaved changes?")) return;
+  $("#levelEditorPanel").classList.add("hidden");
+  levelState = null;
 }
 
 async function drawPpm(url) {
@@ -197,6 +424,81 @@ $("#bootGameSelect").addEventListener("change", async (event) => {
 $("#closeEditor").addEventListener("click", () => $("#editorPanel").classList.add("hidden"));
 $("#saveLocalBtn").addEventListener("click", () => act($("#saveLocalBtn"), "Saving", () => saveConfig(false)));
 $("#saveReloadBtn").addEventListener("click", () => act($("#saveReloadBtn"), "Saving", () => saveConfig(true)));
+$("#closeLevelEditor").addEventListener("click", closeLevelEditor);
+$("#levelTools").querySelectorAll("[data-tool]").forEach((button) => button.addEventListener("click", () => {
+  if (levelState) selectLevelTool(button.dataset.tool);
+}));
+$("#levelZoom").addEventListener("change", (event) => {
+  if (!levelState) return;
+  levelState.cell = Number(event.target.value);
+  renderLevel();
+});
+$("#undoLevel").addEventListener("click", () => changeHistory("undo", "redo"));
+$("#redoLevel").addEventListener("click", () => changeHistory("redo", "undo"));
+$("#resizeLevel").addEventListener("click", () => {
+  if (!levelState) return;
+  const width = Number($("#levelWidth").value), height = Number($("#levelHeight").value);
+  if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 || width > 512 || height > 512) {
+    setAction("Level dimensions must be between 1 and 512.", true); return;
+  }
+  const oldWidth = levelState.rows[0].length, oldHeight = levelState.rows.length;
+  if (width === oldWidth && height === oldHeight) return;
+  const empty = levelState.editor.empty;
+  const losesTiles = levelState.rows.some((row, y) => y >= height && row.some((tile) => tile !== empty) ||
+    y < height && row.slice(width).some((tile) => tile !== empty));
+  if (losesTiles && !confirm("Shrinking the map will remove non-empty tiles. Continue?")) return;
+  checkpointLevel();
+  levelState.rows = Array.from({length:height}, (_, y) =>
+    Array.from({length:width}, (_, x) => levelState.rows[y]?.[x] ?? empty));
+  renderLevel();
+});
+$("#saveLevelLocal").addEventListener("click", () => act($("#saveLevelLocal"), "Saving", () => saveLevel(false)));
+$("#saveLevelPlay").addEventListener("click", () => act($("#saveLevelPlay"), "Saving and launching", () => saveLevel(true)));
+
+const levelCanvas = $("#levelCanvas");
+levelCanvas.addEventListener("pointerdown", (event) => {
+  if (!levelState || event.button !== 0) return;
+  const point = cellAt(event);
+  if (!insideLevel(point)) return;
+  event.preventDefault();
+  levelCanvas.setPointerCapture(event.pointerId);
+  levelState.drawing = true; levelState.start = point; levelState.last = point;
+  checkpointLevel();
+  const value = levelState.tool === "erase" ? levelState.editor.empty : levelState.tile;
+  if (levelState.tool === "fill") { floodFill(point, value); levelState.drawing = false; renderLevel(); }
+  else if (levelState.tool === "pencil" || levelState.tool === "erase") { paintCell(point, value); renderLevel(); }
+});
+levelCanvas.addEventListener("pointermove", (event) => {
+  if (!levelState) return;
+  const point = cellAt(event);
+  $("#levelCoordinates").textContent = insideLevel(point) ? `Tile ${point.x}, ${point.y}` : "—";
+  if (!levelState.drawing || !insideLevel(point) ||
+      (point.x === levelState.last.x && point.y === levelState.last.y)) return;
+  if (levelState.tool === "pencil" || levelState.tool === "erase") {
+    const value = levelState.tool === "erase" ? levelState.editor.empty : levelState.tile;
+    paintLine(levelState.last, point, value); levelState.last = point; renderLevel();
+  }
+});
+function finishLevelStroke(event) {
+  if (!levelState?.drawing) return;
+  const point = cellAt(event);
+  const end = insideLevel(point) ? point : levelState.last;
+  const value = levelState.tool === "erase" ? levelState.editor.empty : levelState.tile;
+  if (levelState.tool === "line") paintLine(levelState.start, end, value);
+  else if (levelState.tool === "rectangle") paintRectangle(levelState.start, end, value);
+  levelState.drawing = false;
+  renderLevel();
+}
+levelCanvas.addEventListener("pointerup", finishLevelStroke);
+levelCanvas.addEventListener("pointercancel", finishLevelStroke);
+window.addEventListener("keydown", (event) => {
+  if (!levelState || $("#levelEditorPanel").classList.contains("hidden") || !(event.ctrlKey || event.metaKey)) return;
+  if (event.key.toLowerCase() === "z") { event.preventDefault(); changeHistory(event.shiftKey ? "redo" : "undo", event.shiftKey ? "undo" : "redo"); }
+  else if (event.key.toLowerCase() === "y") { event.preventDefault(); changeHistory("redo", "undo"); }
+});
+window.addEventListener("beforeunload", (event) => {
+  if (levelState && levelText() !== levelState.savedText) event.preventDefault();
+});
 $("#refreshLogsBtn").addEventListener("click", async () => {
   try { $("#logs").textContent = (await api("/api/logs")).logs || "The host log is empty."; }
   catch (error) { $("#logs").textContent = error.message; }

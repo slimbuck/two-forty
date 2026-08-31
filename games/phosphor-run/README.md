@@ -18,3 +18,9 @@ original SNES controller once the Pico adapter is connected.
 All tuning lives in `game.conf`. The level and player sprite are text files;
 the sounds are uncompressed WAVs. `assets/concept.png` is the generated visual
 reference for the palette, robot, relay machinery, shards, and portal.
+
+The dashboard discovers `editor.json` and provides a visual tilemap editor for
+`assets/level-01.txt`. Its dashed frames show the 40×30 tiles visible on one
+320×240 screen. Saving locally keeps the repository as the source of truth;
+**Save and play on Pi** transfers the level and restarts Phosphor Run without a
+compile.

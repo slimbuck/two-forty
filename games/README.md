@@ -6,6 +6,7 @@ Every immediate child directory is one independent game. A game contains:
 games/my-game/
   game.conf       launcher metadata and tweakable settings
   game.c          the loadable game module
+  editor.json     optional dashboard editor descriptions
   assets/         ordinary images, sounds, maps, and other editable data
 ```
 
@@ -31,3 +32,37 @@ list needs editing.
 Adding a new game therefore means copying an existing folder, changing its
 manifest, code, settings, and assets, then choosing **Deploy + build** in the
 dashboard. The host restarts at the launcher and discovers it automatically.
+
+## Dashboard editors
+
+An optional `editor.json` exposes game-owned data to reusable dashboard tools.
+Version 1 supports rectangular, single-character tilemaps:
+
+```json
+{
+  "version": 1,
+  "editors": [{
+    "id": "level-01",
+    "name": "Level 1",
+    "type": "tilemap",
+    "file": "assets/level-01.txt",
+    "tileSize": 8,
+    "empty": ".",
+    "viewport": { "width": 40, "height": 30 },
+    "palette": [
+      { "value": ".", "name": "Empty", "color": "#050a14" },
+      { "value": "#", "name": "Solid", "color": "#35d7d3", "minimum": 1 },
+      { "value": "S", "name": "Spawn", "color": "#c878ff", "minimum": 1, "maximum": 1 }
+    ]
+  }]
+}
+```
+
+Each palette value is one character. Optional `minimum` and `maximum` counts
+are enforced by both the browser and server. Lines beginning with `# ` are
+treated as level comments and preserved when the map is saved.
+
+**Save locally** atomically updates the repository asset. **Save and play on
+Pi** additionally copies only that asset over SSH and launches the game; it
+does not rebuild the C module. The server rejects stale edits if the source
+file changed after the editor was opened.

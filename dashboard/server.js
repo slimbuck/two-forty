@@ -3,6 +3,7 @@
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 const { spawn } = require("child_process");
 
 const DASHBOARD = __dirname;
@@ -93,6 +94,93 @@ function gameDirectory(id) {
   return directory;
 }
 
+function editorAssetPath(directory, relative) {
+  if (typeof relative !== "string" || !/^[A-Za-z0-9._/-]+$/.test(relative) ||
+      relative.split("/").some((part) => !part || part === "." || part === ".."))
+    throw new Error("invalid editor asset path");
+  const resolved = path.resolve(directory, ...relative.split("/"));
+  if (!resolved.startsWith(`${path.resolve(directory)}${path.sep}`))
+    throw new Error("editor asset escapes game directory");
+  return resolved;
+}
+
+function loadEditors(id) {
+  const directory = gameDirectory(id);
+  const file = path.join(directory, "editor.json");
+  if (!fs.existsSync(file)) return [];
+  const document = JSON.parse(fs.readFileSync(file, "utf8"));
+  if (document.version !== 1 || !Array.isArray(document.editors))
+    throw new Error(`${id}/editor.json has an unsupported format`);
+  const seen = new Set();
+  return document.editors.map((editor) => {
+    if (!editor || !/^[a-z0-9][a-z0-9-]{0,62}$/.test(editor.id || "") || seen.has(editor.id))
+      throw new Error(`${id}/editor.json has an invalid editor id`);
+    seen.add(editor.id);
+    if (editor.type !== "tilemap") throw new Error(`${id}/${editor.id} has an unsupported editor type`);
+    editorAssetPath(directory, editor.file);
+    if (!Number.isInteger(editor.tileSize) || editor.tileSize < 1 || editor.tileSize > 128)
+      throw new Error(`${id}/${editor.id} has an invalid tile size`);
+    if (!Array.isArray(editor.palette) || editor.palette.length < 2)
+      throw new Error(`${id}/${editor.id} has an invalid palette`);
+    const values = new Set();
+    for (const tile of editor.palette) {
+      if (!tile || typeof tile.value !== "string" || [...tile.value].length !== 1 || values.has(tile.value) ||
+          typeof tile.name !== "string" || !/^#[0-9a-fA-F]{6}$/.test(tile.color || ""))
+        throw new Error(`${id}/${editor.id} has an invalid palette entry`);
+      if ((tile.minimum !== undefined && (!Number.isInteger(tile.minimum) || tile.minimum < 0)) ||
+          (tile.maximum !== undefined && (!Number.isInteger(tile.maximum) || tile.maximum < 0)))
+        throw new Error(`${id}/${editor.id} has an invalid tile count rule`);
+      values.add(tile.value);
+    }
+    if (!values.has(editor.empty)) throw new Error(`${id}/${editor.id} has an invalid empty tile`);
+    const viewport = editor.viewport || {};
+    if (!Number.isInteger(viewport.width) || viewport.width < 1 ||
+        !Number.isInteger(viewport.height) || viewport.height < 1)
+      throw new Error(`${id}/${editor.id} has an invalid viewport`);
+    return editor;
+  });
+}
+
+function findEditor(gameId, editorId) {
+  const editor = loadEditors(gameId).find((candidate) => candidate.id === editorId);
+  if (!editor) throw Object.assign(new Error("editor not found"), { status: 404 });
+  return editor;
+}
+
+function textHash(text) {
+  return crypto.createHash("sha256").update(text).digest("hex");
+}
+
+function validateTilemap(editor, text) {
+  const rows = text.split(/\r?\n/).filter((line) => line && !line.startsWith("# "));
+  const errors = [];
+  if (!rows.length) errors.push("The level has no tile rows.");
+  const width = rows[0]?.length || 0;
+  if (width > 512 || rows.length > 512) errors.push("The level cannot exceed 512 × 512 tiles.");
+  rows.forEach((row, index) => {
+    if (row.length !== width) errors.push(`Row ${index + 1} is ${row.length} tiles wide; expected ${width}.`);
+  });
+  const allowed = new Set(editor.palette.map((tile) => tile.value));
+  const counts = Object.fromEntries(editor.palette.map((tile) => [tile.value, 0]));
+  rows.forEach((row, rowIndex) => [...row].forEach((tile, columnIndex) => {
+    if (!allowed.has(tile)) errors.push(`Unknown tile ${JSON.stringify(tile)} at ${columnIndex + 1}, ${rowIndex + 1}.`);
+    else counts[tile]++;
+  }));
+  for (const tile of editor.palette) {
+    if (tile.minimum !== undefined && counts[tile.value] < tile.minimum)
+      errors.push(`${tile.name} requires at least ${tile.minimum}; found ${counts[tile.value]}.`);
+    if (tile.maximum !== undefined && counts[tile.value] > tile.maximum)
+      errors.push(`${tile.name} allows at most ${tile.maximum}; found ${counts[tile.value]}.`);
+  }
+  return { valid: errors.length === 0, errors, width, height: rows.length };
+}
+
+function writeAtomic(file, text) {
+  const temporary = `${file}.next-${process.pid}`;
+  fs.writeFileSync(temporary, text, "utf8");
+  fs.renameSync(temporary, file);
+}
+
 function listGames() {
   const root = path.join(ROOT, "games");
   if (!fs.existsSync(root)) return [];
@@ -113,8 +201,9 @@ function listGames() {
             url: `/api/games/${encodeURIComponent(entry.name)}/assets/${encodeURIComponent(asset.name)}`,
           }))
         : [];
+      const editors = loadEditors(entry.name).map(({ id, name, type }) => ({ id, name, type }));
       return { id: values.id || entry.name, name: values.name || entry.name,
-        description: values.description || "", values, assets };
+        description: values.description || "", values, assets, editors };
     }).filter(Boolean);
 }
 
@@ -137,7 +226,7 @@ async function requestBody(request) {
   let size = 0;
   for await (const chunk of request) {
     size += chunk.length;
-    if (size > 128 * 1024) throw new Error("request too large");
+    if (size > 1024 * 1024) throw new Error("request too large");
     chunks.push(chunk);
   }
   return JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
@@ -283,6 +372,41 @@ async function handle(request, response) {
       return json(response, 200, { ok: true });
     }
 
+    match = /^\/api\/games\/([^/]+)\/editors\/([^/]+)$/.exec(url.pathname);
+    if (match && request.method === "GET") {
+      const id = decodeURIComponent(match[1]);
+      const editorId = decodeURIComponent(match[2]);
+      const editor = findEditor(id, editorId);
+      const text = fs.readFileSync(editorAssetPath(gameDirectory(id), editor.file), "utf8");
+      return json(response, 200, { id, editor, text, hash: textHash(text),
+        validation: validateTilemap(editor, text) });
+    }
+    if (match && request.method === "PUT") {
+      const id = decodeURIComponent(match[1]);
+      const editorId = decodeURIComponent(match[2]);
+      const editor = findEditor(id, editorId);
+      const file = editorAssetPath(gameDirectory(id), editor.file);
+      const body = await requestBody(request);
+      if (typeof body.text !== "string" || body.text.length > 512 * 1024 || body.text.includes("\0"))
+        return json(response, 400, { error: "invalid editor data" });
+      const text = body.text.endsWith("\n") ? body.text : `${body.text}\n`;
+      const current = fs.readFileSync(file, "utf8");
+      if (body.hash && body.hash !== textHash(current))
+        return json(response, 409, { error: "The level changed on disk. Reopen it before saving." });
+      const validation = validateTilemap(editor, text);
+      if (!validation.valid) return json(response, 400,
+        { error: validation.errors.join(" "), validation });
+      writeAtomic(file, text);
+      if (body.play) {
+        const remoteDirectory = `${config.remoteRoot}/games/${id}/${path.posix.dirname(editor.file)}`;
+        await ssh(`mkdir -p ${remoteDirectory}`);
+        await command("scp", [...scpArgs(), file,
+          `${config.user}@${config.host}:${config.remoteRoot}/games/${id}/${editor.file}`]);
+        await sendControl(`launch ${id}`);
+      }
+      return json(response, 200, { ok: true, hash: textHash(text), validation });
+    }
+
     match = /^\/api\/games\/([^/]+)\/assets\/([^/]+)$/.exec(url.pathname);
     if (match && request.method === "GET") {
       const id = decodeURIComponent(match[1]);
@@ -307,7 +431,7 @@ async function handle(request, response) {
     json(response, 404, { error: "not found" });
   } catch (error) {
     console.error(error);
-    json(response, 500, { error: error.message });
+    json(response, error.status || 500, { error: error.message });
   }
 }
 
