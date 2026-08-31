@@ -1,0 +1,7 @@
+/build/
+/run/
+/snapshots/
+/dashboard/config.local.json
+/dashboard/captures/
+__pycache__/
+*.py[cod]
