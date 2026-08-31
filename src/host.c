@@ -776,8 +776,15 @@ static void draw_launcher(struct host *host)
               power_selected ? 255 : 190, power_selected ? 220 : 125,
               power_selected ? 210 : 120);
 
-    draw_text(host, 20 + drift, 12, "DPAD MOVE  ANY BUTTON SELECT", 1,
-              105, 125, 130);
+    char footer[64], confirm[32];
+    if (settings_selected) {
+        copy_text(footer, sizeof(footer), "ANY BUTTON SETTINGS");
+    } else {
+        binding_name(host, &host->bindings[TWO_FORTY_ACTION_CONFIRM],
+                     confirm, sizeof(confirm));
+        snprintf(footer, sizeof(footer), "DPAD MOVE  %s CHOOSE", confirm);
+    }
+    draw_text(host, 20 + drift, 12, footer, 1, 105, 125, 130);
     glDisable(GL_SCISSOR_TEST);
 }
 
@@ -1183,22 +1190,27 @@ static void update_host(struct host *host)
             if (controller_buttons_released(&host->inputs))
                 host->capture_wait_release = false;
         } else {
+            bool moved = false;
             if (input->pressed[KEY_UP] || input->pressed[KEY_W] ||
                 input->action_pressed[TWO_FORTY_ACTION_UP] ||
-                host->inputs.controller_up_pressed)
+                host->inputs.controller_up_pressed) {
                 host->selected_action = (host->selected_action +
                     TWO_FORTY_ACTION_COUNT - 1) % TWO_FORTY_ACTION_COUNT;
+                moved = true;
+            }
             if (input->pressed[KEY_DOWN] || input->pressed[KEY_S] ||
                 input->action_pressed[TWO_FORTY_ACTION_DOWN] ||
-                host->inputs.controller_down_pressed)
+                host->inputs.controller_down_pressed) {
                 host->selected_action = (host->selected_action + 1) %
                     TWO_FORTY_ACTION_COUNT;
-            if (input->pressed[KEY_ESC] ||
-                input->action_pressed[TWO_FORTY_ACTION_MENU]) {
+                moved = true;
+            }
+            if (!moved && (input->pressed[KEY_ESC] ||
+                           input->action_pressed[TWO_FORTY_ACTION_MENU])) {
                 host->controller_settings = false;
-            } else if (input->pressed[KEY_ENTER] ||
-                       input->action_pressed[TWO_FORTY_ACTION_CONFIRM] ||
-                       input->controller_pressed) {
+            } else if (!moved && (input->pressed[KEY_ENTER] ||
+                                  input->action_pressed[TWO_FORTY_ACTION_CONFIRM] ||
+                                  input->controller_pressed)) {
                 host->binding_capture = true;
                 host->capture_wait_release = true;
                 host->captured_binding_ready = false;
@@ -1206,24 +1218,31 @@ static void update_host(struct host *host)
         }
     } else {
         int item_count = host->game_count + 2;
+        bool moved = false;
         if (input->pressed[KEY_UP] || input->pressed[KEY_W] ||
             input->action_pressed[TWO_FORTY_ACTION_UP] ||
-            host->inputs.controller_up_pressed)
+            host->inputs.controller_up_pressed) {
             host->selected_game = (host->selected_game + item_count - 1) % item_count;
+            moved = true;
+        }
         if (input->pressed[KEY_DOWN] || input->pressed[KEY_S] ||
             input->action_pressed[TWO_FORTY_ACTION_DOWN] ||
-            host->inputs.controller_down_pressed)
+            host->inputs.controller_down_pressed) {
             host->selected_game = (host->selected_game + 1) % item_count;
+            moved = true;
+        }
         bool confirmed = input->pressed[KEY_ENTER] ||
             input->action_pressed[TWO_FORTY_ACTION_CONFIRM];
-        if (confirmed || input->controller_pressed) {
+        if (!moved && confirmed) {
             if (host->selected_game < host->game_count)
                 load_game(host, host->selected_game);
             else if (host->selected_game == host->game_count)
                 host->controller_settings = true;
-            else if (confirmed)
+            else
                 power_down_pi();
-        }
+        } else if (!moved && input->controller_pressed &&
+                   host->selected_game == host->game_count)
+            host->controller_settings = true;
         if (input->pressed[KEY_Q] || input->pressed[KEY_ESC]) host->running = false;
     }
     memset(input->pressed, 0, sizeof(input->pressed));
