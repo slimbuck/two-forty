@@ -108,6 +108,7 @@ function loadEditors(id) {
   const directory = gameDirectory(id);
   const file = path.join(directory, "editor.json");
   if (!fs.existsSync(file)) return [];
+  const gameValues = parseConfig(fs.readFileSync(path.join(directory, "game.conf"), "utf8"));
   const document = JSON.parse(fs.readFileSync(file, "utf8"));
   if (document.version !== 1 || !Array.isArray(document.editors))
     throw new Error(`${id}/editor.json has an unsupported format`);
@@ -116,16 +117,19 @@ function loadEditors(id) {
     if (!editor || !/^[a-z0-9][a-z0-9-]{0,62}$/.test(editor.id || "") || seen.has(editor.id))
       throw new Error(`${id}/editor.json has an invalid editor id`);
     seen.add(editor.id);
-    if (editor.type !== "tilemap") throw new Error(`${id}/${editor.id} has an unsupported editor type`);
+    if (!new Set(["tilemap", "sprite"]).has(editor.type))
+      throw new Error(`${id}/${editor.id} has an unsupported editor type`);
     editorAssetPath(directory, editor.file);
-    if (!Number.isInteger(editor.tileSize) || editor.tileSize < 1 || editor.tileSize > 128)
+    if (editor.type === "tilemap" &&
+        (!Number.isInteger(editor.tileSize) || editor.tileSize < 1 || editor.tileSize > 128))
       throw new Error(`${id}/${editor.id} has an invalid tile size`);
     if (!Array.isArray(editor.palette) || editor.palette.length < 2)
       throw new Error(`${id}/${editor.id} has an invalid palette`);
     const values = new Set();
     for (const tile of editor.palette) {
-      if (!tile || typeof tile.value !== "string" || [...tile.value].length !== 1 || values.has(tile.value) ||
-          typeof tile.name !== "string" || !/^#[0-9a-fA-F]{6}$/.test(tile.color || ""))
+      if (!tile || typeof tile.value !== "string" || !/^[\x21-\x7e]$/.test(tile.value) || values.has(tile.value) ||
+          typeof tile.name !== "string" || !/^#[0-9a-fA-F]{6}$/.test(tile.color || "") ||
+          (tile.config !== undefined && !/^[a-z][a-z0-9_]{0,62}$/.test(tile.config)))
         throw new Error(`${id}/${editor.id} has an invalid palette entry`);
       if ((tile.minimum !== undefined && (!Number.isInteger(tile.minimum) || tile.minimum < 0)) ||
           (tile.maximum !== undefined && (!Number.isInteger(tile.maximum) || tile.maximum < 0)))
@@ -133,11 +137,16 @@ function loadEditors(id) {
       values.add(tile.value);
     }
     if (!values.has(editor.empty)) throw new Error(`${id}/${editor.id} has an invalid empty tile`);
-    const viewport = editor.viewport || {};
-    if (!Number.isInteger(viewport.width) || viewport.width < 1 ||
-        !Number.isInteger(viewport.height) || viewport.height < 1)
-      throw new Error(`${id}/${editor.id} has an invalid viewport`);
-    return editor;
+    if (editor.type === "tilemap") {
+      const viewport = editor.viewport || {};
+      if (!Number.isInteger(viewport.width) || viewport.width < 1 ||
+          !Number.isInteger(viewport.height) || viewport.height < 1)
+        throw new Error(`${id}/${editor.id} has an invalid viewport`);
+    }
+    return { ...editor, palette: editor.palette.map((tile) => {
+      const configured = tile.config ? gameValues[tile.config] : "";
+      return { ...tile, color: /^[0-9a-fA-F]{6}$/.test(configured) ? `#${configured}` : tile.color };
+    }) };
   });
 }
 
@@ -151,12 +160,14 @@ function textHash(text) {
   return crypto.createHash("sha256").update(text).digest("hex");
 }
 
-function validateTilemap(editor, text) {
+function validateEditorText(editor, text) {
   const rows = text.split(/\r?\n/).filter((line) => line && !line.startsWith("# "));
   const errors = [];
   if (!rows.length) errors.push("The level has no tile rows.");
   const width = rows[0]?.length || 0;
-  if (width > 512 || rows.length > 512) errors.push("The level cannot exceed 512 × 512 tiles.");
+  const maximum = editor.type === "sprite" ? 128 : 512;
+  if (width > maximum || rows.length > maximum)
+    errors.push(`${editor.type === "sprite" ? "The sprite" : "The level"} cannot exceed ${maximum} × ${maximum}.`);
   rows.forEach((row, index) => {
     if (row.length !== width) errors.push(`Row ${index + 1} is ${row.length} tiles wide; expected ${width}.`);
   });
@@ -379,7 +390,7 @@ async function handle(request, response) {
       const editor = findEditor(id, editorId);
       const text = fs.readFileSync(editorAssetPath(gameDirectory(id), editor.file), "utf8");
       return json(response, 200, { id, editor, text, hash: textHash(text),
-        validation: validateTilemap(editor, text) });
+        validation: validateEditorText(editor, text) });
     }
     if (match && request.method === "PUT") {
       const id = decodeURIComponent(match[1]);
@@ -393,7 +404,7 @@ async function handle(request, response) {
       const current = fs.readFileSync(file, "utf8");
       if (body.hash && body.hash !== textHash(current))
         return json(response, 409, { error: "The level changed on disk. Reopen it before saving." });
-      const validation = validateTilemap(editor, text);
+      const validation = validateEditorText(editor, text);
       if (!validation.valid) return json(response, 400,
         { error: validation.errors.join(" "), validation });
       writeAtomic(file, text);

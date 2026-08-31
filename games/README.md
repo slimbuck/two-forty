@@ -36,7 +36,7 @@ dashboard. The host restarts at the launcher and discovers it automatically.
 ## Dashboard editors
 
 An optional `editor.json` exposes game-owned data to reusable dashboard tools.
-Version 1 supports rectangular, single-character tilemaps:
+Version 1 supports rectangular, single-character tilemaps and pixel sprites:
 
 ```json
 {
@@ -58,11 +58,32 @@ Version 1 supports rectangular, single-character tilemaps:
 }
 ```
 
+A sprite uses the same palette-driven text format without `tileSize` or
+`viewport`:
+
+```json
+{
+  "id": "player",
+  "name": "Player sprite",
+  "type": "sprite",
+  "file": "assets/player.sprite",
+  "empty": ".",
+  "palette": [
+    { "value": ".", "name": "Transparent", "color": "#050a14" },
+    { "value": "c", "name": "Cyan", "color": "#35d7d3", "config": "platform_edge" }
+  ]
+}
+```
+
 Each palette value is one character. Optional `minimum` and `maximum` counts
 are enforced by both the browser and server. Lines beginning with `# ` are
-treated as level comments and preserved when the map is saved.
+treated as level comments and preserved when the map is saved. An optional
+`config` names a six-digit colour in `game.conf`; the explicit `color` remains
+the editor fallback.
 
 **Save locally** atomically updates the repository asset. **Save and play on
 Pi** additionally copies only that asset over SSH and launches the game; it
 does not rebuild the C module. The server rejects stale edits if the source
-file changed after the editor was opened.
+file changed after the editor was opened. Sprite editors also provide a native
+preview and horizontal flip. The current format describes one static frame;
+animation timelines will build on the same palette and frame representation.

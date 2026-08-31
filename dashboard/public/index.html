@@ -58,26 +58,27 @@
     </section>
 
     <section id="levelEditorPanel" class="panel level-editor-panel hidden">
-      <div class="panel-head"><div><span class="eyebrow">Tilemap editor</span><h2 id="levelEditorTitle">Level editor</h2></div><button id="closeLevelEditor" class="icon-button" aria-label="Close level editor">×</button></div>
+      <div class="panel-head"><div><span id="gridEditorKind" class="eyebrow">Grid editor</span><h2 id="levelEditorTitle">Asset editor</h2></div><button id="closeLevelEditor" class="icon-button" aria-label="Close asset editor">×</button></div>
       <div class="level-toolbar">
         <div id="levelTools" class="segmented" aria-label="Drawing tool">
           <button class="active" data-tool="pencil">Pencil</button><button data-tool="erase">Erase</button><button data-tool="line">Line</button><button data-tool="rectangle">Rectangle</button><button data-tool="fill">Fill</button>
         </div>
-        <div class="level-history"><button id="undoLevel" class="button compact" disabled>Undo</button><button id="redoLevel" class="button compact" disabled>Redo</button></div>
+        <div class="level-history"><button id="undoLevel" class="button compact" disabled>Undo</button><button id="redoLevel" class="button compact" disabled>Redo</button><button id="flipSprite" class="button compact hidden">Flip horizontally</button></div>
         <label class="zoom-control">Zoom <select id="levelZoom"><option value="12">1.5×</option><option value="16" selected>2×</option><option value="24">3×</option><option value="32">4×</option></select></label>
       </div>
       <div class="level-workspace">
         <aside>
-          <h3>Tiles</h3>
+          <h3 id="gridPaletteTitle">Tiles</h3>
           <div id="tilePalette" class="tile-palette"></div>
-          <h3>Map size</h3>
+          <div id="spritePreviewPanel" class="sprite-preview-panel hidden"><h3>Preview</h3><div class="sprite-preview"><canvas id="spritePreview" aria-label="Sprite preview"></canvas></div><span id="spritePreviewSize">—</span></div>
+          <h3 id="gridSizeTitle">Map size</h3>
           <div class="size-controls"><label>Width <input id="levelWidth" type="number" min="1" max="512"></label><label>Height <input id="levelHeight" type="number" min="1" max="512"></label><button id="resizeLevel" class="button compact">Resize</button></div>
-          <div class="level-help"><strong id="levelCoordinates">—</strong><span>Each dashed frame is one 320×240 screen.</span></div>
+          <div class="level-help"><strong id="levelCoordinates">—</strong><span id="gridEditorHelp">Each dashed frame is one 320×240 screen.</span></div>
         </aside>
         <div id="levelCanvasScroll" class="level-canvas-scroll"><canvas id="levelCanvas" aria-label="Editable level tilemap"></canvas></div>
       </div>
       <div class="level-footer">
-        <div><strong id="levelValidation">Level is valid</strong><span id="levelDirty">No unsaved changes.</span></div>
+        <div><strong id="levelValidation">Asset is valid</strong><span id="levelDirty">No unsaved changes.</span></div>
         <div class="button-row"><button id="saveLevelLocal" class="button">Save locally</button><button id="saveLevelPlay" class="button primary">Save and play on Pi</button></div>
       </div>
     </section>

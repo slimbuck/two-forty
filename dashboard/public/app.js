@@ -190,7 +190,8 @@ function updateLevelState() {
   if (!levelState) return;
   const errors = validateLevel();
   const validation = $("#levelValidation");
-  validation.textContent = errors.length ? errors[0] : "Level is valid";
+  validation.textContent = errors.length ? errors[0] :
+    `${levelState.editor.type === "sprite" ? "Sprite" : "Level"} is valid`;
   validation.title = errors.join("\n");
   validation.classList.toggle("invalid", errors.length > 0);
   $("#levelDirty").textContent = levelText() === levelState.savedText ?
@@ -234,18 +235,38 @@ function renderLevel() {
     context.stroke();
   }
   const viewport = levelState.editor.viewport;
-  context.save();
-  context.setLineDash([7, 5]);
-  context.strokeStyle = "rgba(243,184,69,.9)";
-  context.lineWidth = 2;
-  for (let x = viewport.width; x < width; x += viewport.width) {
-    context.beginPath(); context.moveTo(x * cell, 0); context.lineTo(x * cell, height * cell); context.stroke();
+  if (viewport) {
+    context.save();
+    context.setLineDash([7, 5]);
+    context.strokeStyle = "rgba(243,184,69,.9)";
+    context.lineWidth = 2;
+    for (let x = viewport.width; x < width; x += viewport.width) {
+      context.beginPath(); context.moveTo(x * cell, 0); context.lineTo(x * cell, height * cell); context.stroke();
+    }
+    for (let y = viewport.height; y < height; y += viewport.height) {
+      context.beginPath(); context.moveTo(0, y * cell); context.lineTo(width * cell, y * cell); context.stroke();
+    }
+    context.restore();
   }
-  for (let y = viewport.height; y < height; y += viewport.height) {
-    context.beginPath(); context.moveTo(0, y * cell); context.lineTo(width * cell, y * cell); context.stroke();
-  }
-  context.restore();
+  if (levelState.editor.type === "sprite") renderSpritePreview(palette);
   updateLevelState();
+}
+
+function renderSpritePreview(palette) {
+  const canvas = $("#spritePreview");
+  const width = levelState.rows[0].length, height = levelState.rows.length;
+  canvas.width = width; canvas.height = height;
+  const scale = Math.max(1, Math.min(8, Math.floor(128 / width), Math.floor(112 / height)));
+  canvas.style.width = `${width * scale}px`;
+  canvas.style.height = `${height * scale}px`;
+  const context = canvas.getContext("2d");
+  context.clearRect(0, 0, width, height);
+  levelState.rows.forEach((row, y) => row.forEach((value, x) => {
+    if (value === levelState.editor.empty) return;
+    context.fillStyle = palette.get(value)?.color || "#ff00ff";
+    context.fillRect(x, y, 1, 1);
+  }));
+  $("#spritePreviewSize").textContent = `${width}×${height} native pixels`;
 }
 
 function renderLevelPalette() {
@@ -271,12 +292,25 @@ async function openLevelEditor(gameId, editorId) {
   if (levelState && levelText() !== levelState.savedText &&
       !confirm("Discard the unsaved level changes?")) return;
   const data = await api(`/api/games/${encodeURIComponent(gameId)}/editors/${encodeURIComponent(editorId)}`);
+  const isSprite = data.editor.type === "sprite";
   levelState = { gameId, editorId, editor:data.editor, hash:data.hash, savedText:data.text,
-    comments:[], rows:[], cell:16, tile:data.editor.palette.find((tile) => tile.value !== data.editor.empty)?.value || data.editor.empty,
+    comments:[], rows:[], cell:isSprite ? 32 : 16, tile:data.editor.palette.find((tile) => tile.value !== data.editor.empty)?.value || data.editor.empty,
     tool:"pencil", undo:[], redo:[], drawing:false, start:null, last:null };
   Object.assign(levelState, parseLevelText(data.text));
   $("#editorPanel").classList.add("hidden");
   $("#levelEditorTitle").textContent = `${games.find((game) => game.id === gameId)?.name || gameId} · ${data.editor.name}`;
+  $("#gridEditorKind").textContent = isSprite ? "Pixel sprite editor" : "Tilemap editor";
+  $("#gridPaletteTitle").textContent = isSprite ? "Palette" : "Tiles";
+  $("#gridSizeTitle").textContent = isSprite ? "Image size" : "Map size";
+  $("#gridEditorHelp").textContent = isSprite ?
+    "Transparent pixels show the checkerboard behind the native preview." :
+    "Each dashed frame is one 320×240 screen.";
+  $("#spritePreviewPanel").classList.toggle("hidden", !isSprite);
+  $("#flipSprite").classList.toggle("hidden", !isSprite);
+  $("#levelCanvas").setAttribute("aria-label", isSprite ? "Editable pixel sprite" : "Editable level tilemap");
+  $("#levelCanvasScroll").classList.toggle("sprite", isSprite);
+  $("#levelWidth").max = isSprite ? "128" : "512";
+  $("#levelHeight").max = isSprite ? "128" : "512";
   $("#levelZoom").value = String(levelState.cell);
   selectLevelTool("pencil");
   renderLevelPalette();
@@ -435,11 +469,18 @@ $("#levelZoom").addEventListener("change", (event) => {
 });
 $("#undoLevel").addEventListener("click", () => changeHistory("undo", "redo"));
 $("#redoLevel").addEventListener("click", () => changeHistory("redo", "undo"));
+$("#flipSprite").addEventListener("click", () => {
+  if (!levelState || levelState.editor.type !== "sprite") return;
+  checkpointLevel();
+  levelState.rows.forEach((row) => row.reverse());
+  renderLevel();
+});
 $("#resizeLevel").addEventListener("click", () => {
   if (!levelState) return;
   const width = Number($("#levelWidth").value), height = Number($("#levelHeight").value);
-  if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 || width > 512 || height > 512) {
-    setAction("Level dimensions must be between 1 and 512.", true); return;
+  const maximum = levelState.editor.type === "sprite" ? 128 : 512;
+  if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 || width > maximum || height > maximum) {
+    setAction(`Dimensions must be between 1 and ${maximum}.`, true); return;
   }
   const oldWidth = levelState.rows[0].length, oldHeight = levelState.rows.length;
   if (width === oldWidth && height === oldHeight) return;
