@@ -1,0 +1,16 @@
+# 12x14 text sprite. Each character is one native 320x240 pixel.
+# . transparent, n navy, s steel, c cyan, a amber, w white, r coral
+....cccc....
+...cwwwwc...
+..cnwccwnc..
+..cwwccwwc..
+...cssssc...
+..aassssaa..
+..aassssaa..
+...ssssss...
+...sccccs...
+..ssccccss..
+..ss....ss..
+..aa....aa..
+..aa....aa..
+..nn....nn..
