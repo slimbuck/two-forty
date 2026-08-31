@@ -4,7 +4,7 @@ set -eu
 two_forty_user=retro
 two_forty_hostname=twoforty
 two_forty_address=192.168.137.2/24
-two_forty_boot_game=phosphor-run
+two_forty_boot_game=launcher
 two_forty_check_only=0
 two_forty_skip_network=0
 
@@ -15,7 +15,7 @@ Usage: sudo sh provision/provision-pi.sh [options]
   --user NAME          Runtime/login user (default: retro)
   --hostname NAME      Pi hostname (default: twoforty)
   --address CIDR       Static Ethernet address (default: 192.168.137.2/24)
-  --boot-game ID       Game loaded after boot, or launcher
+  --boot-game ID       Game loaded after boot (default: launcher)
   --skip-network       Do not alter NetworkManager settings
   --check              Validate the current machine without changing it
 EOF

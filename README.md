@@ -107,5 +107,5 @@ sh deploy/install-service.sh
 For a complete clean-card rebuild—including Trixie first-boot setup, RGBerry
 timings, packages, network, software deployment, compilation, boot policy, and
 validation—follow [provision/README.md](provision/README.md). The default
-`config/host.conf` boots directly into Phosphor Run; the laptop dashboard is
+`config/host.conf` boots into the game launcher; the laptop dashboard is
 optional once the Pi has been installed.

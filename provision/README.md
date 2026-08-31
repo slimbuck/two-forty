@@ -42,8 +42,8 @@ On a Pi that already has all packages and no internet route:
 ```
 
 Use `-NoReboot` while diagnosing an install, `-SkipNetwork` to preserve an
-existing network profile, and `-BootGame launcher` to boot into the selector
-instead of a game.
+existing network profile, and `-BootGame phosphor-run` to boot directly into
+Phosphor Run instead of the default launcher.
 
 ## 3. Autonomous operation
 
@@ -52,7 +52,7 @@ No laptop or dashboard is needed after installation. Systemd starts
 `config/host.conf` chooses the startup destination:
 
 ```ini
-boot_game=phosphor-run
+boot_game=launcher
 ```
 
 The dashboard's **Boot directly into** selector edits this same file. F1 or
@@ -72,7 +72,7 @@ On the Pi:
 
 ```sh
 cd /home/retro/two-forty
-sudo sh provision/provision-pi.sh --check --boot-game phosphor-run
+sudo sh provision/provision-pi.sh --check --boot-game launcher
 systemctl status two-forty.service
 ```
 

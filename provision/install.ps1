@@ -12,7 +12,7 @@ param(
   [string]$PiName = "twoforty",
   [string]$User = "retro",
   [string]$Address = "192.168.137.2/24",
-  [string]$BootGame = "phosphor-run",
+  [string]$BootGame = "launcher",
   [string]$IdentityFile,
   [string]$KnownHostsFile,
   [switch]$Offline,
