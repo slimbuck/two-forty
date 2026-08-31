@@ -304,11 +304,11 @@ static void default_bindings(struct controller_binding *bindings)
     bindings[TWO_FORTY_ACTION_JUMP] =
         (struct controller_binding){BINDING_KEY, BTN_SOUTH, 0};
     bindings[TWO_FORTY_ACTION_DASH] =
-        (struct controller_binding){BINDING_KEY, BTN_WEST, 0};
+        (struct controller_binding){BINDING_KEY, BTN_EAST, 0};
     bindings[TWO_FORTY_ACTION_CONFIRM] =
-        (struct controller_binding){BINDING_KEY, BTN_START, 0};
+        (struct controller_binding){BINDING_KEY, BTN_TR2, 0};
     bindings[TWO_FORTY_ACTION_MENU] =
-        (struct controller_binding){BINDING_KEY, BTN_SELECT, 0};
+        (struct controller_binding){BINDING_KEY, BTN_TL2, 0};
 }
 
 static bool parse_binding(const char *text, struct controller_binding *binding)

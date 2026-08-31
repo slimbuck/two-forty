@@ -28,8 +28,8 @@ Run from SSH while the CRT is connected:
 Controls:
 
 - D-pad: move in the launcher and games
-- SNES B: jump
-- SNES Y: dash
+- SNES Y: jump
+- SNES B: dash
 - Start: confirm
 - Select: return to the launcher
 - Hold any two non-direction controller buttons for one second: emergency

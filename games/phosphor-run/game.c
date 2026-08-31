@@ -597,8 +597,8 @@ static void render_hud(void)
 static void render_title(void)
 {
     char jump[32], dash[32], confirm[32], menu[32], line[96];
-    controller_label(TWO_FORTY_ACTION_JUMP, "B", jump, sizeof(jump));
-    controller_label(TWO_FORTY_ACTION_DASH, "Y", dash, sizeof(dash));
+    controller_label(TWO_FORTY_ACTION_JUMP, "Y", jump, sizeof(jump));
+    controller_label(TWO_FORTY_ACTION_DASH, "B", dash, sizeof(dash));
     controller_label(TWO_FORTY_ACTION_CONFIRM, "START", confirm, sizeof(confirm));
     controller_label(TWO_FORTY_ACTION_MENU, "SELECT", menu, sizeof(menu));
     render_background();
