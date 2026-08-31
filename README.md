@@ -32,6 +32,8 @@ Controls:
 - SNES Y: dash
 - Start: confirm
 - Select: return to the launcher
+- Hold any two non-direction controller buttons for one second: emergency
+  return to the launcher before Menu has been bound
 - Arrow keys or WASD, Space/Z, X/Shift, Enter, F1/Escape: keyboard fallback
 - F12: save a snapshot from any screen
 - Q or Escape in the launcher: quit and restore the console framebuffer

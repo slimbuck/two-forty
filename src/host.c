@@ -257,6 +257,7 @@ struct host {
     bool capture_wait_release;
     bool captured_binding_ready;
     struct controller_binding captured_binding;
+    unsigned int controller_menu_chord_frames;
 };
 
 static volatile sig_atomic_t stop_requested;
@@ -1009,6 +1010,18 @@ static bool controller_buttons_released(const struct input_set *inputs)
     return true;
 }
 
+static int controller_buttons_down(const struct input_set *inputs)
+{
+    int count = 0;
+    for (int index = 0; index < inputs->count; ++index) {
+        const struct input_device *device = &inputs->devices[index];
+        if (!device->controller) continue;
+        for (unsigned int code = 0; code <= KEY_MAX; ++code)
+            if (device->keys[code] && !controller_direction_code(code)) ++count;
+    }
+    return count;
+}
+
 static bool binding_down(const struct input_set *inputs,
                          const struct controller_binding *binding)
 {
@@ -1099,10 +1112,18 @@ static void update_host(struct host *host)
     update_controller_actions(host);
     if (input->pressed[KEY_F12]) snapshot_requested = 1;
     if (host->active_game != NULL) {
+        if (controller_buttons_down(&host->inputs) >= 2) {
+            if (host->controller_menu_chord_frames < 60)
+                ++host->controller_menu_chord_frames;
+        } else {
+            host->controller_menu_chord_frames = 0;
+        }
         if (input->pressed[KEY_ESC] || input->pressed[KEY_F1] ||
-            input->action_pressed[TWO_FORTY_ACTION_MENU]) {
+            input->action_pressed[TWO_FORTY_ACTION_MENU] ||
+            host->controller_menu_chord_frames >= 60) {
             unload_game(host);
             host->controller_settings = false;
+            host->controller_menu_chord_frames = 0;
         } else {
             host->game_api->update(input);
         }
