@@ -25,25 +25,40 @@ Run from SSH while the CRT is connected:
 ./build/two-forty-host
 ```
 
-Controls:
+Controls (defaults):
 
 - D-pad: move in the launcher and games
-- SNES Y: jump
-- SNES B: dash
-- Start: confirm
-- Select: return to the launcher
-- Hold any two non-direction controller buttons for one second: emergency
-  return to the launcher before Menu has been bound
-- Arrow keys or WASD, Space/Z, X/Shift, Enter, F1/Escape: keyboard fallback
-- F12: save a snapshot from any screen
-- Q or Escape in the launcher: quit and restore the console framebuffer
+- SNES Y: jump; SNES B: dash in games and Confirm in every menu
+- Select: back / return to the launcher; Start has no special menu behavior
+- Keyboard: arrows, Z jump, X dash, Enter confirm, Escape back
+- F1: recovery back / cancel setup; F12: snapshot outside setup
+- Hold Start + Select for one second: recovery return from a game
 
-Choose **Controller Settings** in the CRT launcher to rebind any logical
-action. Raw D-pad input navigates the launcher even before bindings are valid.
-Select an action, press any non-direction controller button, release it, then
-press the controller button or D-pad direction to assign. Bindings are saved
-atomically on the Pi in `config/host.conf` and survive service restarts and
-reboots.
+Choose **Input Settings**, then **Configure buttons** or **Configure keyboard**.
+The wizard asks for Left, Right, Up, Down, Jump, Dash, Confirm and Menu in order.
+Release each button, key or axis before the next prompt. Start and Select can be
+assigned normally; their existing actions are suspended during capture. Confirm
+may share Jump or Dash because it is used in menus. Other duplicate bindings are
+rejected. F1/F12 remain reserved on the keyboard. F1 cancels the whole draft; a
+controller-only user can hold two non-direction buttons for one second to cancel.
+Only a completed sequence is saved, atomically, in the Pi's `config/host.conf`.
+Cancelled or failed saves leave the old mappings intact. Arrow keys and Enter
+remain available for recovery navigation in the launcher. Escape no longer quits
+the host from the launcher; stop the service or use Ctrl+C in its terminal.
+
+Choose **Display Area** to calibrate CRT overscan. Up/Down selects Side Margin,
+Top/Bottom Margin, Save or Cancel; Left/Right adjusts the selected margin. Keep all
+four cyan edges visible. The defaults reserve 16 pixels per side and 12 at the top
+and bottom, leaving a 288×216 playable area inside the physical 320×240 output.
+Margins can be 0–32 horizontally and 0–24 vertically. All drawing is translated
+and clipped to this area at native pixel size; game cameras and UI use its logical
+dimensions. Cancel restores the previous area; Save persists it across restarts.
+The dashboard's level editor uses the connected Pi's viewport for its guides.
+
+Old default Start-confirm configurations automatically migrate to B on load.
+Version-2 custom mappings are kept, including Start if you explicitly assign it.
+Controller mappings use `bind_*`; keyboard mappings use `key_*`; `safe_x` and
+`safe_y` store the display margins. `input_version=2` marks the new defaults.
 
 The program uses `/dev/dri/card0` and reads Linux evdev keyboard devices under
 `/dev/input`. The `retro` user is already a member of the `video`, `render`,
@@ -109,3 +124,12 @@ timings, packages, network, software deployment, compilation, boot policy, and
 validation—follow [provision/README.md](provision/README.md). The default
 `config/host.conf` boots into the game launcher; the laptop dashboard is
 optional once the Pi has been installed.
+
+
+## Host regression tests
+
+`make test` checks the asset/editor, game and host input/layout behavior without
+accessing DRM, input devices, or the live Pi. In WSL with Windows Node installed,
+use `make test NODE=node.exe`. The host test writes software-rendered PPM previews
+under `build/`. Host mapping and setup logic lives in `src/input_bindings.c`; evdev
+routing, launcher screens, persistence and the safe viewport remain in `src/host.c`.

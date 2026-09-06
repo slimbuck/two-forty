@@ -29,6 +29,8 @@ struct two_forty_input {
 
 struct two_forty_host_api {
     unsigned int abi_version;
+    /* Logical playable viewport, excluding the CRT-safe border. Drawing is
+       clipped to these bounds and translated to physical output by the host. */
     int screen_width;
     int screen_height;
     void *context;

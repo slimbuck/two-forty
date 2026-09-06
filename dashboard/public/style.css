@@ -70,3 +70,12 @@ main { width: min(1180px, calc(100% - 36px)); margin: 24px auto 60px; display: g
 .level-footer { display:flex; justify-content:space-between; align-items:center; gap:18px; margin-top:12px; }.level-footer > div:first-child { display:grid; gap:2px; }.level-footer strong { color:var(--green); font-size:12px; }.level-footer strong.invalid { color:var(--red); }.level-footer span { color:var(--muted); font-size:10px; }.level-footer .button-row { min-width:310px; }
 .log-panel pre { margin:0; max-height:240px; overflow:auto; padding:15px; border-radius:9px; background:#070c0e; color:#94aaa6; font:11px/1.55 ui-monospace,Consolas,monospace; white-space:pre-wrap; }
 @media (max-width: 800px) { .hero-grid { grid-template-columns:1fr; }.topbar { padding:0 18px; }.brand p { display:none; }.hint { display:none; }.editor-footer,.level-footer { align-items:stretch; flex-direction:column; }.editor-footer .button-row,.level-footer .button-row { min-width:0; width:100%; }.level-workspace { grid-template-columns:1fr; }.level-workspace aside { border-right:0; border-bottom:1px solid var(--line); }.tile-palette { grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); }.level-workspace { min-height:0; }.level-canvas-scroll { max-height:500px; }.zoom-control { margin-left:0; } }
+/* Asset navigation and animation controls wrap on narrow displays. */
+.asset-navigation label, #animationControls label { display: flex; align-items: center; gap: 8px; }
+.asset-navigation select { max-width: 280px; }
+.asset-navigation input { width: 170px; }
+#animationTicks { width: 65px; }
+.asset-navigation input, #animationControls input, .asset-navigation select, #animationControls select {
+  background: var(--bg); color: var(--ink); border: 1px solid var(--line);
+  padding: 8px; border-radius: 6px;
+}

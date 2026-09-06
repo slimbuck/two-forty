@@ -59,6 +59,24 @@
 
     <section id="levelEditorPanel" class="panel level-editor-panel hidden">
       <div class="panel-head"><div><span id="gridEditorKind" class="eyebrow">Grid editor</span><h2 id="levelEditorTitle">Asset editor</h2></div><button id="closeLevelEditor" class="icon-button" aria-label="Close asset editor">×</button></div>
+      <div class="level-toolbar asset-navigation">
+        <label>Asset <select id="assetSelect" aria-label="Level or animation"></select></label>
+        <label>New asset name <input id="newAssetName" placeholder="e.g. lower-tower" maxlength="63"></label>
+        <button id="duplicateAsset" class="button compact">Duplicate as new asset</button>
+        <button id="levelEarlier" class="button compact">Earlier in campaign</button>
+        <button id="levelLater" class="button compact">Later in campaign</button>
+      </div>
+      <div id="animationControls" class="level-toolbar hidden">
+        <label>Frame <select id="animationFrame" aria-label="Animation frame"></select></label>
+        <button id="addFrame" class="button compact">Add blank frame</button>
+        <button id="duplicateFrame" class="button compact">Duplicate frame</button>
+        <button id="removeFrame" class="button compact">Delete frame</button>
+        <button id="frameEarlier" class="button compact">Move frame left</button>
+        <button id="frameLater" class="button compact">Move frame right</button>
+        <label>Ticks / frame <input id="animationTicks" type="number" min="1" max="600" value="6"></label>
+        <button id="previewAnimation" class="button compact" aria-pressed="false">Play preview</button>
+        <span class="hint">60 ticks = 1 second. Resize applies to every frame.</span>
+      </div>
       <div class="level-toolbar">
         <div id="levelTools" class="segmented" aria-label="Drawing tool">
           <button class="active" data-tool="pencil">Pencil</button><button data-tool="erase">Erase</button><button data-tool="line">Line</button><button data-tool="rectangle">Rectangle</button><button data-tool="fill">Fill</button>
@@ -89,5 +107,6 @@
     </section>
   </main>
   <script src="/app.js"></script>
+  <script src="/asset-editor.js"></script>
 </body>
 </html>

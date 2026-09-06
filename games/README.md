@@ -82,8 +82,22 @@ treated as level comments and preserved when the map is saved. An optional
 the editor fallback.
 
 **Save locally** atomically updates the repository asset. **Save and play on
-Pi** additionally copies only that asset over SSH and launches the game; it
-does not rebuild the C module. The server rejects stale edits if the source
-file changed after the editor was opened. Sprite editors also provide a native
-preview and horizontal flip. The current format describes one static frame;
-animation timelines will build on the same palette and frame representation.
+Pi** copies the game package and Makefile, builds its module if needed, and
+launches the game. The server rejects stale edits if the source file changed
+after the editor was opened. Sprite editors provide animation frames, timing,
+native playback preview, horizontal flip and complete undo/redo.
+
+
+### Catalogs and animation frames
+
+Games may add `catalog: "content.conf"` and `templates: {level: {...}, sprite: {...}}`
+to their version-1 editor document, keeping `editors: []` or explicit registrations.
+Catalog entries use `level.id=relative/path.txt` and `sprite.id=relative/path.sprite`.
+The dashboard expands each entry from its template; campaign order follows the
+level entries. Catalog games gain asset duplication and campaign reordering.
+
+Sprite files can contain multiple equal-sized frames separated by `---`, with
+`# ticks=N` setting frame duration at 60 ticks/second. They support 1–64 frames,
+1–600 ticks/frame, and dimensions up to 128×128. Existing single-frame sprites
+remain valid. See [Phosphor Run](phosphor-run/README.md) for the complete shared
+runtime/editor contract and the Save and play deployment behavior.

@@ -5,7 +5,8 @@
   "description": "Local development control panel for the Two Forty Raspberry Pi",
   "type": "commonjs",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node --test editors.test.js"
   },
   "engines": {
     "node": ">=18"

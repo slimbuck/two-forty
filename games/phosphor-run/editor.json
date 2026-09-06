@@ -1,42 +1,112 @@
 {
   "version": 1,
-  "editors": [
-    {
-      "id": "level-01",
-      "name": "Relay Shaft 01",
+  "catalog": "content.conf",
+  "templates": {
+    "level": {
       "type": "tilemap",
-      "file": "assets/level-01.txt",
       "tileSize": 8,
       "empty": ".",
       "viewport": {
-        "width": 40,
-        "height": 30
+        "width": 36,
+        "height": 27
       },
       "palette": [
-        { "value": ".", "name": "Empty", "color": "#050a14" },
-        { "value": "#", "name": "Platform", "color": "#35d7d3", "minimum": 1 },
-        { "value": "^", "name": "Hazard", "color": "#ff5b4f" },
-        { "value": "o", "name": "Signal shard", "color": "#9cff57" },
-        { "value": "C", "name": "Checkpoint", "color": "#ffb43b" },
-        { "value": "E", "name": "Exit", "color": "#f4f1cf", "minimum": 1, "maximum": 1 },
-        { "value": "S", "name": "Spawn", "color": "#c878ff", "minimum": 1, "maximum": 1 }
+        {
+          "value": ".",
+          "name": "Empty",
+          "color": "#050a14"
+        },
+        {
+          "value": "#",
+          "name": "Platform",
+          "color": "#35d7d3",
+          "minimum": 1
+        },
+        {
+          "value": "^",
+          "name": "Hazard",
+          "color": "#ff5b4f"
+        },
+        {
+          "value": "o",
+          "name": "Signal shard",
+          "color": "#9cff57"
+        },
+        {
+          "value": "C",
+          "name": "Checkpoint",
+          "color": "#ffb43b"
+        },
+        {
+          "value": "E",
+          "name": "Exit",
+          "color": "#f4f1cf",
+          "minimum": 1,
+          "maximum": 1
+        },
+        {
+          "value": "S",
+          "name": "Spawn",
+          "color": "#c878ff",
+          "minimum": 1,
+          "maximum": 1
+        }
       ]
     },
-    {
-      "id": "player",
-      "name": "Player sprite",
+    "sprite": {
       "type": "sprite",
-      "file": "assets/player.sprite",
       "empty": ".",
       "palette": [
-        { "value": ".", "name": "Transparent", "color": "#050a14", "config": "background" },
-        { "value": "n", "name": "Navy", "color": "#091a2b", "config": "deep_machinery" },
-        { "value": "s", "name": "Steel", "color": "#163c55", "config": "platform" },
-        { "value": "c", "name": "Cyan", "color": "#35d7d3", "config": "platform_edge" },
-        { "value": "a", "name": "Amber", "color": "#ffb43b", "config": "amber" },
-        { "value": "w", "name": "White", "color": "#f4f1cf", "config": "paper" },
-        { "value": "r", "name": "Coral", "color": "#ff5b4f", "config": "hazard" }
+        {
+          "value": ".",
+          "name": "Transparent",
+          "color": "#050a14",
+          "config": "background"
+        },
+        {
+          "value": "n",
+          "name": "Navy",
+          "color": "#091a2b",
+          "config": "deep_machinery"
+        },
+        {
+          "value": "s",
+          "name": "Steel",
+          "color": "#163c55",
+          "config": "platform"
+        },
+        {
+          "value": "c",
+          "name": "Cyan",
+          "color": "#35d7d3",
+          "config": "platform_edge"
+        },
+        {
+          "value": "a",
+          "name": "Amber",
+          "color": "#ffb43b",
+          "config": "amber"
+        },
+        {
+          "value": "w",
+          "name": "White",
+          "color": "#f4f1cf",
+          "config": "paper"
+        },
+        {
+          "value": "r",
+          "name": "Coral",
+          "color": "#ff5b4f",
+          "config": "hazard"
+        },
+        {
+          "value": "g",
+          "name": "Phosphor",
+          "color": "#9cff57",
+          "config": "phosphor"
+        }
       ]
     }
-  ]
+  },
+  "editors": []
 }
